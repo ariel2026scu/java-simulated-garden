@@ -1,0 +1,12 @@
+{
+  "plants": [
+    { "name": "Rose",      "amount": 5 },
+    { "name": "Tomato",    "amount": 5 },
+    { "name": "Lettuce",   "amount": 4 },
+    { "name": "Cactus",    "amount": 3 },
+    { "name": "Sunflower", "amount": 4 },
+    { "name": "Basil",     "amount": 4 },
+    { "name": "Pepper",    "amount": 3 },
+    { "name": "Lavender",  "amount": 3 }
+  ]
+}

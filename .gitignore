@@ -1,0 +1,7 @@
+.DS_Store
+**/.DS_Store
+target/
+out/
+*.class
+log.txt
+.idea/
