@@ -24,6 +24,12 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.RadialGradient;
+import javafx.scene.paint.Stop;
+import javafx.scene.shape.StrokeLineCap;
+import javafx.scene.shape.StrokeLineJoin;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
@@ -453,24 +459,96 @@ public class GardenGame extends Application {
 
     private void drawBackground() {
         gc.clearRect(0, 0, CANVAS_W, CANVAS_H);
-        // Sky gradient strip.
-        gc.setFill(Color.web("#173a27"));
-        gc.fillRect(0, 0, CANVAS_W, CANVAS_H);
-        gc.setFill(Color.web("#1e4a32"));
-        gc.fillRect(0, 0, CANVAS_W, TOP - 40);
-        // Soil rows.
+        double horizon = TOP - 40;
+
+        // ── Sky: soft vertical gradient ───────────────────────────────────────
+        gc.setFill(new LinearGradient(0, 0, 0, horizon, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#aee3ff")),
+                new Stop(0.6, Color.web("#cdeffd")),
+                new Stop(1, Color.web("#eafbf0"))));
+        gc.fillRect(0, 0, CANVAS_W, horizon);
+
+        // Sun with a soft glow, drifting slightly with time.
+        double sunX = CANVAS_W - 130 + Math.sin(worldTime * 0.2) * 8;
+        double sunY = 64;
+        gc.setFill(new RadialGradient(0, 0, sunX, sunY, 90, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.color(1, 0.95, 0.6, 0.55)),
+                new Stop(1, Color.color(1, 0.95, 0.6, 0))));
+        gc.fillOval(sunX - 90, sunY - 90, 180, 180);
+        gc.setFill(new RadialGradient(0, 0, sunX - 8, sunY - 8, 34, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#fff6cf")),
+                new Stop(1, Color.web("#ffdf6b"))));
+        gc.fillOval(sunX - 30, sunY - 30, 60, 60);
+
+        // Drifting clouds.
+        for (int i = 0; i < 3; i++) {
+            double speed = 14 + i * 6;
+            double cx = ((worldTime * speed) + i * 420) % (CANVAS_W + 220) - 110;
+            double cy = 40 + i * 26;
+            drawCloud(cx, cy, 1.0 - i * 0.12);
+        }
+
+        // ── Rolling hills behind the beds ─────────────────────────────────────
+        gc.setFill(Color.web("#bfe6a4"));
+        gc.beginPath();
+        gc.moveTo(0, horizon);
+        for (double x = 0; x <= CANVAS_W; x += 40) {
+            gc.lineTo(x, horizon - 22 - Math.sin(x / 160.0) * 14);
+        }
+        gc.lineTo(CANVAS_W, horizon);
+        gc.closePath();
+        gc.fill();
+
+        // ── Lawn: gradient grass with alternating mowed stripes ───────────────
+        gc.setFill(new LinearGradient(0, horizon, 0, CANVAS_H, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#7cc36b")),
+                new Stop(1, Color.web("#4f9b48"))));
+        gc.fillRect(0, horizon, CANVAS_W, CANVAS_H - horizon);
+
         int rows = Math.max(1, (int) Math.ceil(sprites.size() / (double) COLS));
         for (int r = 0; r < rows; r++) {
-            gc.setFill(r % 2 == 0 ? Color.web("#3a6b40") : Color.web("#356040"));
-            double y = TOP - 40 + r * CELL_H;
+            double y = horizon + r * CELL_H;
+            // Mowed stripe shading (cosmetic only).
+            gc.setFill(r % 2 == 0 ? Color.color(1, 1, 1, 0.05) : Color.color(0, 0, 0, 0.05));
             gc.fillRect(0, y, CANVAS_W, CELL_H);
-            // Soil bed under the row.
-            gc.setFill(Color.web("#5a4327"));
-            gc.fillRect(MARGIN_X - 30, y + CELL_H - 26, CANVAS_W - (MARGIN_X - 30) * 2, 22);
+
+            // Soil bed: rounded planter with rim highlight + dark earth.
+            double bx = MARGIN_X - 34;
+            double bw = CANVAS_W - (MARGIN_X - 34) * 2;
+            double by = y + CELL_H - 30;
+            gc.setFill(new LinearGradient(0, by, 0, by + 26, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.web("#8a6a3f")),
+                    new Stop(1, Color.web("#4f3a20"))));
+            gc.fillRoundRect(bx, by, bw, 26, 12, 12);
+            gc.setStroke(Color.web("#3a2a16"));
+            gc.setLineWidth(2);
+            gc.strokeRoundRect(bx, by, bw, 26, 12, 12);
+            // Speckle the soil for a little texture.
+            gc.setFill(Color.color(0, 0, 0, 0.18));
+            for (int s = 0; s < 26; s++) {
+                double sx = bx + 10 + ((s * 53) % (int) (bw - 20));
+                double sy = by + 6 + ((s * 17) % 14);
+                gc.fillOval(sx, sy, 2.5, 2.5);
+            }
         }
     }
 
+    /** Soft puffy cloud built from overlapping translucent circles. */
+    private void drawCloud(double x, double y, double scale) {
+        gc.setFill(Color.color(1, 1, 1, 0.85));
+        double s = 1.0 * scale;
+        gc.fillOval(x, y, 60 * s, 36 * s);
+        gc.fillOval(x + 30 * s, y - 14 * s, 54 * s, 42 * s);
+        gc.fillOval(x + 64 * s, y, 58 * s, 34 * s);
+        gc.fillOval(x + 26 * s, y + 8 * s, 70 * s, 30 * s);
+    }
+
     private void drawPlant(PlantSprite s) {
+        // Soft ground shadow anchored to the soil (shrinks as a plant wilts).
+        double shadow = s.alive ? 1.0 : (1 - s.wilt * 0.4);
+        gc.setFill(Color.color(0, 0, 0, 0.16 * shadow));
+        gc.fillOval(s.x - 26 * shadow, s.y + 4, 52 * shadow, 13);
+
         gc.save();
         gc.translate(s.x, s.y);
         if (!s.alive) {
@@ -494,90 +572,145 @@ public class GardenGame extends Application {
         }
     }
 
+    // Storybook-cartoon palette: every shape gets a soft radial gradient, a
+    // darker rounded outline, and a small highlight, which reads far nicer than
+    // flat ovals. Dead plants desaturate to muted browns.
+    private static final Color OUTLINE = Color.web("#2b3a2b");
+
     /** Cartoon plant. Origin at soil base; grows upward (-y). */
     private void drawPlantBody(PlantType type, boolean dead, boolean infested) {
-        Color stem = dead ? Color.web("#6b5536") : Color.web("#2f8f3f");
-        Color leaf = dead ? Color.web("#7a6a45") : Color.web("#3fae50");
-        gc.setStroke(stem);
-        gc.setLineWidth(5);
+        Color stemHi = dead ? Color.web("#9a8456") : Color.web("#5fc66a");
+        Color stemLo = dead ? Color.web("#6b5536") : Color.web("#2f8f3f");
+
+        // Stem: rounded, slightly curved, with a leaf pair near the base.
+        gc.setLineCap(StrokeLineCap.ROUND);
+        gc.setLineJoin(StrokeLineJoin.ROUND);
+        gc.setStroke(stemLo);
+        gc.setLineWidth(7);
         gc.strokeLine(0, 0, 0, -34);
-        gc.setFill(leaf);
-        gc.fillOval(-18, -22, 18, 11);
-        gc.fillOval(2, -28, 18, 11);
+        gc.setStroke(stemHi);
+        gc.setLineWidth(3);
+        gc.strokeLine(-1, -2, -1, -32);
+        leaf(-15, -20, 20, 12, -25, dead);
+        leaf(15, -28, 20, 12, 25, dead);
 
         switch (type) {
             case ROSE -> {
-                gc.setFill(dead ? Color.web("#8a6b6b") : Color.web("#e0466b"));
-                gc.fillOval(-16, -58, 32, 30);
-                gc.setFill(dead ? Color.web("#9a7b7b") : Color.web("#f06d8b"));
-                gc.fillOval(-9, -54, 18, 18);
-                gc.setFill(dead ? Color.web("#7a5b5b") : Color.web("#c23357"));
-                gc.fillOval(-5, -50, 10, 10);
+                blossom(0, -50, 17, 16, c(dead, "#ff9ab8", "#9a7e7e"), c(dead, "#e0466b", "#7a5b5b"));
+                blossom(0, -50, 10, 9, c(dead, "#ffd0dd", "#a98e8e"), c(dead, "#f06d8b", "#8a6b6b"));
+                gc.setFill(c(dead, "#c23357", "#6f5454"));
+                gc.fillOval(-4, -54, 8, 8);
             }
             case TOMATO -> {
-                gc.setFill(dead ? Color.web("#8a5d4f") : Color.web("#e8472f"));
-                gc.fillOval(-17, -56, 34, 32);
-                gc.setFill(dead ? Color.web("#6b6a45") : Color.web("#3fae50"));
-                gc.fillPolygon(new double[]{-6, 0, 6}, new double[]{-58, -66, -58}, 3);
+                gc.setFill(c(dead, "#3fae50", "#7a6a45"));
+                gc.fillPolygon(new double[]{-7, 0, 7}, new double[]{-56, -66, -56}, 3);
+                blossom(0, -42, 17, 16, c(dead, "#ff7a5f", "#9a7b6b"), c(dead, "#e8472f", "#7a5b4b"));
+                blossom(-9, -36, 9, 8, c(dead, "#ff8f72", "#a98b78"), c(dead, "#e8472f", "#7a5b4b"));
             }
             case LETTUCE -> {
-                gc.setFill(dead ? Color.web("#7a7a4f") : Color.web("#79c44f"));
-                gc.fillOval(-22, -50, 22, 22);
-                gc.fillOval(0, -50, 22, 22);
-                gc.fillOval(-12, -60, 24, 22);
+                blossom(-12, -40, 14, 13, c(dead, "#b6e08a", "#9a9a6f"), c(dead, "#79c44f", "#7a7a4f"));
+                blossom(12, -40, 14, 13, c(dead, "#b6e08a", "#9a9a6f"), c(dead, "#79c44f", "#7a7a4f"));
+                blossom(0, -50, 16, 14, c(dead, "#cdeea0", "#a8a87a"), c(dead, "#8fce5e", "#85854f"));
             }
             case CACTUS -> {
-                gc.setFill(dead ? Color.web("#5f6f4a") : Color.web("#3f9e57"));
-                gc.fillRoundRect(-12, -62, 24, 50, 14, 14);
-                gc.fillRoundRect(-26, -48, 14, 26, 10, 10);
-                gc.fillRoundRect(12, -54, 14, 26, 10, 10);
+                roundBlob(-12, -62, 24, 50, 14, c(dead, "#79c08a", "#7f8f6a"), c(dead, "#3f9e57", "#5f6f4a"));
+                roundBlob(-28, -48, 15, 26, 10, c(dead, "#79c08a", "#7f8f6a"), c(dead, "#3f9e57", "#5f6f4a"));
+                roundBlob(13, -54, 15, 26, 10, c(dead, "#79c08a", "#7f8f6a"), c(dead, "#3f9e57", "#5f6f4a"));
+                if (!dead) {
+                    gc.setFill(Color.web("#ffd34d"));
+                    gc.fillOval(-4, -64, 8, 8);
+                }
             }
             case SUNFLOWER -> {
-                Color petal = dead ? Color.web("#9a8a4f") : Color.web("#f4c542");
-                gc.setFill(petal);
-                for (int i = 0; i < 10; i++) {
-                    double ang = Math.toRadians(i * 36);
-                    double px = Math.cos(ang) * 22;
-                    double py = -52 + Math.sin(ang) * 22;
-                    gc.fillOval(px - 6, py - 6, 12, 16);
+                Color pHi = c(dead, "#ffe08a", "#bcae7f");
+                Color pLo = c(dead, "#f4c542", "#9a8a4f");
+                for (int i = 0; i < 12; i++) {
+                    double ang = Math.toRadians(i * 30);
+                    double px = Math.cos(ang) * 23;
+                    double py = -54 + Math.sin(ang) * 23;
+                    gc.save();
+                    gc.translate(px, py);
+                    gc.rotate(Math.toDegrees(ang) + 90);
+                    blossom(0, 0, 6, 11, pHi, pLo);
+                    gc.restore();
                 }
-                gc.setFill(dead ? Color.web("#5b4a2f") : Color.web("#7a4a1f"));
-                gc.fillOval(-13, -65, 26, 26);
+                blossom(0, -54, 14, 14, c(dead, "#a9763f", "#7a6a4f"), c(dead, "#7a4a1f", "#5b4a2f"));
             }
             case BASIL -> {
-                gc.setFill(dead ? Color.web("#5f6f4a") : Color.web("#3f9e4f"));
-                gc.fillOval(-18, -54, 18, 16);
-                gc.fillOval(2, -54, 18, 16);
-                gc.fillOval(-9, -64, 18, 16);
+                leaf(-13, -48, 20, 15, -20, dead);
+                leaf(13, -48, 20, 15, 20, dead);
+                blossom(0, -58, 13, 13, c(dead, "#6fc97a", "#8a9a6f"), c(dead, "#3f9e4f", "#5f6f4a"));
             }
             case PEPPER -> {
-                gc.setFill(dead ? Color.web("#7a5d3f") : Color.web("#e23b2f"));
-                gc.fillOval(-10, -60, 20, 36);
-                gc.setFill(dead ? Color.web("#6b6a45") : Color.web("#3fae50"));
-                gc.fillRect(-3, -64, 6, 10);
+                gc.setFill(c(dead, "#3fae50", "#7a6a45"));
+                gc.fillRoundRect(-4, -66, 8, 12, 4, 4);
+                blossom(0, -44, 11, 19, c(dead, "#ff6a4f", "#9a7b6b"), c(dead, "#e23b2f", "#7a5d3f"));
             }
             case LAVENDER -> {
-                gc.setStroke(dead ? Color.web("#6b6a45") : Color.web("#3f9e4f"));
+                gc.setStroke(c(dead, "#3f9e4f", "#6b6a45"));
                 gc.setLineWidth(3);
-                gc.setFill(dead ? Color.web("#7a6f8a") : Color.web("#9b6fd4"));
                 for (int i = -1; i <= 1; i++) {
-                    double sx = i * 9;
-                    gc.strokeLine(0, -30, sx, -52);
-                    gc.fillOval(sx - 5, -62, 10, 16);
+                    double sx = i * 10;
+                    gc.strokeLine(0, -30, sx, -50);
+                    for (int b = 0; b < 4; b++) {
+                        blossom(sx, -52 - b * 6, 5, 6, c(dead, "#c7a8e8", "#9a8fa8"), c(dead, "#9b6fd4", "#7a6f8a"));
+                    }
                 }
             }
-            default -> {
-                gc.setFill(Color.web("#3fae50"));
-                gc.fillOval(-14, -56, 28, 28);
-            }
+            default -> blossom(0, -50, 15, 15, c(dead, "#6fc97a", "#8a9a6f"), c(dead, "#3fae50", "#5f6f4a"));
         }
 
         // Tiny bug markers when infested (cosmetic).
         if (infested && !dead) {
-            gc.setFill(Color.web("#6b4fa0"));
-            gc.fillOval(8, -40, 6, 6);
-            gc.fillOval(-14, -30, 5, 5);
+            gc.setFill(Color.web("#5b3f95"));
+            gc.fillOval(9, -40, 7, 7);
+            gc.fillOval(-15, -30, 6, 6);
+            gc.setStroke(OUTLINE);
+            gc.setLineWidth(1);
+            gc.strokeOval(9, -40, 7, 7);
+            gc.strokeOval(-15, -30, 6, 6);
         }
+    }
+
+    /** Pick the live or dead color for a shape. */
+    private static Color c(boolean dead, String live, String deadHex) {
+        return Color.web(dead ? deadHex : live);
+    }
+
+    /** A glossy blossom: radial gradient body, dark outline, white highlight. */
+    private void blossom(double cx, double cy, double rx, double ry, Color light, Color dark) {
+        gc.setFill(new RadialGradient(0, 0, cx - rx * 0.3, cy - ry * 0.4, Math.max(rx, ry) * 1.3,
+                false, CycleMethod.NO_CYCLE, new Stop(0, light), new Stop(1, dark)));
+        gc.fillOval(cx - rx, cy - ry, rx * 2, ry * 2);
+        gc.setStroke(OUTLINE);
+        gc.setLineWidth(1.4);
+        gc.strokeOval(cx - rx, cy - ry, rx * 2, ry * 2);
+        gc.setFill(Color.color(1, 1, 1, 0.45));
+        gc.fillOval(cx - rx * 0.45, cy - ry * 0.6, rx * 0.5, ry * 0.5);
+    }
+
+    /** A leaf blob with gradient + outline, rotated about its attach point. */
+    private void leaf(double cx, double cy, double w, double h, double rotDeg, boolean dead) {
+        gc.save();
+        gc.translate(cx, cy);
+        gc.rotate(rotDeg);
+        gc.setFill(new RadialGradient(0, 0, -w * 0.2, -h * 0.3, w, false, CycleMethod.NO_CYCLE,
+                new Stop(0, c(dead, "#6fd07a", "#9a8a5f")), new Stop(1, c(dead, "#2f8f3f", "#6b5536"))));
+        gc.fillOval(-w / 2, -h / 2, w, h);
+        gc.setStroke(OUTLINE);
+        gc.setLineWidth(1.2);
+        gc.strokeOval(-w / 2, -h / 2, w, h);
+        gc.restore();
+    }
+
+    /** A rounded body (cactus segment) with gradient + outline. */
+    private void roundBlob(double x, double y, double w, double h, double arc, Color light, Color dark) {
+        gc.setFill(new LinearGradient(x, y, x + w, y, false, CycleMethod.NO_CYCLE,
+                new Stop(0, light), new Stop(1, dark)));
+        gc.fillRoundRect(x, y, w, h, arc, arc);
+        gc.setStroke(OUTLINE);
+        gc.setLineWidth(1.4);
+        gc.strokeRoundRect(x, y, w, h, arc, arc);
     }
 
     /** Sprinkler nozzle + spray arcs at the base of a thirsty plant. */

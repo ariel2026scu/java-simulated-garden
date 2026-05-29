@@ -18,6 +18,9 @@ public class FertilizerSystem implements GardenModule {
 
     @Override
     public void dailyUpdate(Garden garden, SimulationContext context) {
+        // SENSE: read the soil nutrient sensor before any uptake/fertilizing.
+        context.log("SENSOR", "day " + context.getDay(), "SoilSensor", "READING", garden,
+                "Soil nutrient sensor reads " + garden.getSoilNutrients() + " before daily uptake.");
         garden.changeSoilNutrients(-2);
         if (garden.getSoilNutrients() < 45) {
             garden.changeSoilNutrients(35);

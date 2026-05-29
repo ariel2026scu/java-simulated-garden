@@ -198,9 +198,23 @@ public class SimulationEngine {
         for (Plant plant : garden.getAlivePlants()) {
             plant.evaluateWaterStress();
         }
+
+        // Build a human-readable end-of-day summary: the status mix among the
+        // living and a tally of how the dead were lost, so the log tells the
+        // survival story without cross-referencing individual rows.
+        Map<String, Long> statusMix = garden.getAlivePlants().stream()
+                .collect(Collectors.groupingBy(p -> p.getStatus().name(), Collectors.counting()));
+        Map<String, Long> deathReasons = garden.getDeadPlants().stream()
+                .map(Plant::getDeathReason)
+                .map(r -> r == null || r.isBlank() ? "unknown" : r.split(":")[0].trim())
+                .collect(Collectors.groupingBy(r -> r, Collectors.counting()));
+
         context.log("DAY_END", "day " + context.getDay(), "SimulationEngine", "DAY_COMPLETED", garden,
                 "Completed daily updates. Alive plants: " + garden.getAlivePlants().size()
-                        + "; Dead plants: " + garden.getDeadPlants().size() + ".");
+                        + "; Dead plants: " + garden.getDeadPlants().size()
+                        + "; Soil=" + garden.getSoilNutrients()
+                        + "; living status mix=" + (statusMix.isEmpty() ? "{}" : statusMix)
+                        + "; deaths by cause=" + (deathReasons.isEmpty() ? "{none}" : deathReasons) + ".");
     }
 
     private void ensureInitialized() {

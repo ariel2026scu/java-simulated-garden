@@ -32,6 +32,9 @@ public class TemperatureControlSystem implements GardenModule {
 
     @Override
     public void dailyUpdate(Garden garden, SimulationContext context) {
+        // SENSE: read the ambient temperature sensor before evaluating stress.
+        context.log("SENSOR", "day " + context.getDay(), "TemperatureSensor", "READING", garden,
+                "Ambient temperature reads " + garden.getAmbientTemperature() + "F.");
         for (Plant plant : garden.getAlivePlants()) {
             plant.evaluateTemperature(garden.getAmbientTemperature());
         }

@@ -76,6 +76,13 @@ public class PestControlSystem implements GardenModule {
         int activeBefore = 0;
         int treated = 0;
 
+        // SENSE: scan every plant for active infestations before treating.
+        long infestedNow = garden.getAlivePlants().stream()
+                .filter(p -> !p.getActiveParasites().isEmpty()).count();
+        context.log("SENSOR", "day " + context.getDay(), "PestSensor", "READING", garden,
+                infestedNow + " of " + garden.getAlivePlants().size()
+                        + " living plants read as infested.");
+
         for (Plant plant : garden.getAlivePlants()) {
             // 1. Count and apply ongoing damage while still infested
             if (!plant.getActiveParasites().isEmpty()) {

@@ -26,6 +26,18 @@ public class WateringSystem implements GardenModule {
 
     @Override
     public void dailyUpdate(Garden garden, SimulationContext context) {
+        // SENSE: read each plant's moisture sensor before the actuator responds.
+        int thirsty = 0;
+        for (Plant plant : garden.getAlivePlants()) {
+            if (plant.getWaterLevel() < plant.getType().getWaterRequirement()) {
+                thirsty++;
+            }
+        }
+        context.log("SENSOR", "day " + context.getDay(), "MoistureSensor", "READING", garden,
+                thirsty + " of " + garden.getAlivePlants().size()
+                        + " living plants read below their target moisture level.");
+
+        // ACT: irrigate the plants the sensor flagged.
         int watered = 0;
         for (Plant plant : garden.getAlivePlants()) {
             int need = plant.getType().getWaterRequirement();
