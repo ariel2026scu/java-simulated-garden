@@ -7,22 +7,19 @@ import garden.event.TemperatureEvent;
 import garden.model.GardenSnapshot;
 import garden.model.PlantType;
 import javafx.animation.AnimationTimer;
-import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Spinner;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -30,65 +27,51 @@ import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.shape.StrokeLineJoin;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
-import javafx.stage.Stage;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 
 /**
- * "Living Garden" — an animated, autonomous visualisation of the computerized
- * garden. Unlike a player-driven game, NOTHING here keeps the plants alive
- * except the real automated subsystems: the view simply advances simulated
+ * "Living Garden" — animated, autonomous visualisation of the shared
+ * {@link SimulationEngine}. Designed to be embedded in {@link GardenShell}
+ * alongside {@link DashboardView}, so they observe the same engine.
+ *
+ * <p>NOTHING here keeps the plants alive: the view simply advances simulated
  * days on a timer and renders whatever {@link SimulationEngine#snapshot()}
  * reports. The watering, temperature, pest-control and fertilizer modules do
  * all the work, so this screen directly demonstrates the spec requirement that
- * "the garden survives on its own" for a long run.
+ * "the garden survives on its own".
  *
- * Game-like layer (purely cosmetic, never affects survival):
- *  - cartoon vector plants that sway, wilt when dying, and perk back up;
- *  - animated module devices that react to live state — sprinklers spray a
- *    thirsty plant, shade canopies / heat lamps deploy when the temperature
- *    leaves the comfort band, a pest-control drone sprays infested plants,
- *    and fertilizer granules fall when soil nutrients drop;
- *  - a "guest gardener" panel to throw disturbances (rain, heat wave, cold
- *    snap, pest outbreak) — these are challenges, not life support;
- *  - a 1x / 5x / 20x time-speed control and a survival-day counter with
- *    milestone toasts.
- *
- * Every event the gardener throws is forwarded to the engine, so {@code log.txt}
- * keeps recording the full simulation exactly as the grader expects.
+ * <p>The canvas grows vertically with the plant count and is hosted inside a
+ * {@link ScrollPane}, so large gardens stay fully browsable.
  */
-public class GardenGame extends Application {
+public class GameView {
 
     private static final int CANVAS_W = 1120;
-    private static final int CANVAS_H = 600;
     private static final int COLS = 6;
     private static final double MARGIN_X = 90;
     private static final double TOP = 150;
     private static final double CELL_W = (CANVAS_W - MARGIN_X * 2) / COLS;
     private static final double CELL_H = 150;
+    private static final double BOTTOM_PAD = 60;
 
-    // Comfort band for the temperature module (outside → device kicks in).
     private static final int COMFORT_MIN = 55;
     private static final int COMFORT_MAX = 95;
     private static final int SOIL_LOW = 45;
 
-    // One simulated day every this many *real* seconds at 1x speed.
     private static final double SECONDS_PER_DAY = 3.5;
 
-    private final SimulationEngine engine = new SimulationEngine();
+    private final SimulationEngine engine;
     private final Random random = new Random();
 
     private final List<PlantSprite> sprites = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final List<Drone> drones = new ArrayList<>();
 
-    private GraphicsContext gc;
+    private final BorderPane root = new BorderPane();
+    private final Canvas canvas = new Canvas(CANVAS_W, computeCanvasHeight(1));
+    private final GraphicsContext gc = canvas.getGraphicsContext2D();
     private GardenSnapshot snapshot;
     private long lastNanos = 0;
     private double dayAccumulator = 0;
@@ -104,143 +87,54 @@ public class GardenGame extends Application {
     private final Label envLabel = new Label();
     private final Label speedLabel = new Label();
 
-    @Override
-    public void start(Stage stage) {
-        // Load the config-driven defaults first, then let the player customize
-        // the starting plants on a setup screen before the simulation begins.
-        engine.initialize();
-        snapshot = engine.snapshot();
-        showSetupScreen(stage);
-    }
+    private AnimationTimer timer;
+    private Runnable onStateChanged = () -> {};
 
-    // ── Startup plant picker (defaults read from garden_config.json) ───────────
-
-    private void showSetupScreen(Stage stage) {
-        Map<PlantType, Integer> defaults = defaultCountsFromSnapshot();
-        Map<PlantType, Spinner<Integer>> spinners = new EnumMap<>(PlantType.class);
-
-        Label title = new Label("Choose your starting plants");
-        title.setFont(Font.font("System", FontWeight.BOLD, 22));
-        title.setStyle("-fx-text-fill: #eafff0;");
-        Label sub = new Label("Defaults come from garden_config.json. Set any count you like, then plant the garden.");
-        sub.setStyle("-fx-text-fill: #bfe3c9; -fx-font-size: 13px;");
-
-        GridPane grid = new GridPane();
-        grid.setHgap(14);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(18, 4, 18, 4));
-        int row = 0;
-        for (PlantType type : PlantType.values()) {
-            Label name = new Label(type.getDisplayName());
-            name.setStyle("-fx-text-fill: #eafff0; -fx-font-size: 14px;");
-            name.setMinWidth(110);
-            Spinner<Integer> spinner = new Spinner<>(0, 40, defaults.getOrDefault(type, 0));
-            spinner.setEditable(true);
-            spinner.setPrefWidth(90);
-            Label hint = new Label("water " + type.getWaterRequirement()
-                    + " · ok " + type.getMinTemperature() + "–" + type.getMaxTemperature() + "°F");
-            hint.setStyle("-fx-text-fill: #8fb89a; -fx-font-size: 11px;");
-            spinners.put(type, spinner);
-            grid.add(name, 0, row);
-            grid.add(spinner, 1, row);
-            grid.add(hint, 2, row);
-            row++;
-        }
-
-        Label totalLabel = new Label();
-        totalLabel.setStyle("-fx-text-fill: #ffe9a8; -fx-font-size: 14px; -fx-font-weight: bold;");
-        Runnable updateTotal = () -> {
-            int total = spinners.values().stream().mapToInt(s -> s.getValue() == null ? 0 : s.getValue()).sum();
-            totalLabel.setText("Total plants: " + total + (total == 0 ? "  (will use config defaults)" : ""));
-        };
-        spinners.values().forEach(s -> s.valueProperty().addListener((o, a, b) -> updateTotal.run()));
-        updateTotal.run();
-
-        Button useDefaults = btn("Use config defaults");
-        useDefaults.setOnAction(e -> {
-            engine.initialize();
-            launchGarden(stage);
-        });
-        Button startBtn = btn("🌱 Plant garden");
-        startBtn.setOnAction(e -> {
-            Map<PlantType, Integer> chosen = new EnumMap<>(PlantType.class);
-            spinners.forEach((t, s) -> chosen.put(t, s.getValue() == null ? 0 : s.getValue()));
-            engine.initializeWith(chosen);
-            launchGarden(stage);
-        });
-        HBox buttons = new HBox(12, useDefaults, startBtn);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox box = new VBox(8, title, sub, grid, totalLabel, buttons);
-        box.setPadding(new Insets(28, 36, 28, 36));
-        box.setStyle("-fx-background-color: #0c241a;");
-
-        Scene setupScene = new Scene(box);
-        stage.setTitle("Living Garden — Setup");
-        stage.setScene(setupScene);
-        stage.show();
-    }
-
-    private Map<PlantType, Integer> defaultCountsFromSnapshot() {
-        Map<PlantType, Integer> counts = new EnumMap<>(PlantType.class);
-        for (GardenSnapshot.PlantView v : snapshot.plants()) {
-            if (!"DEAD".equals(v.status())) {
-                PlantType t;
-                try {
-                    t = PlantType.fromName(v.type());
-                } catch (RuntimeException ex) {
-                    continue;
-                }
-                counts.merge(t, 1, Integer::sum);
-            }
-        }
-        return counts;
-    }
-
-    private void launchGarden(Stage stage) {
-        snapshot = engine.snapshot();
-        sprites.clear();
+    public GameView(SimulationEngine engine) {
+        this.engine = engine;
+        this.snapshot = engine.snapshot();
         syncSprites();
-        lastNanos = 0;
-        dayAccumulator = 0;
-        lastDayMilestone = 0;
 
-        Canvas canvas = new Canvas(CANVAS_W, CANVAS_H);
-        gc = canvas.getGraphicsContext2D();
-        StackPane holder = new StackPane(canvas);
-        holder.setStyle("-fx-background-color: #0b2018;");
+        StackPane canvasHolder = new StackPane(canvas);
+        canvasHolder.setStyle("-fx-background-color: #0b2018;");
+        canvasHolder.setAlignment(Pos.TOP_CENTER);
 
-        BorderPane root = new BorderPane();
+        ScrollPane scrollPane = new ScrollPane(canvasHolder);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPannable(true);
+        scrollPane.setStyle(
+                "-fx-background: #0b2018;"
+                        + " -fx-background-color: #0b2018;"
+                        + " -fx-control-inner-background: #0b2018;");
+
         root.setTop(buildHud());
-        root.setCenter(holder);
+        root.setCenter(scrollPane);
         root.setBottom(buildToolbar());
         root.setStyle("-fx-background-color: #0c241a;");
 
-        Scene scene = new Scene(root, CANVAS_W + 40, CANVAS_H + 150);
-        stage.setTitle("Living Garden — Autonomous Simulation");
-        stage.setScene(scene);
-        stage.show();
+        refreshHud();
+        startAnimation();
+    }
 
-        new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                if (lastNanos == 0) {
-                    lastNanos = now;
-                    return;
-                }
-                double dt = (now - lastNanos) / 1_000_000_000.0;
-                lastNanos = now;
-                if (dt > 0.1) {
-                    dt = 0.1;
-                }
-                try {
-                    update(dt);
-                    render();
-                } catch (Throwable t) {
-                    System.err.println("[GardenGame] frame error contained: " + t);
-                }
-            }
-        }.start();
+    public Node getRoot() {
+        return root;
+    }
+
+    public void setOnStateChanged(Runnable callback) {
+        this.onStateChanged = callback == null ? () -> {} : callback;
+    }
+
+    /** Called by sibling views (e.g. dashboard buttons) after they mutate the engine. */
+    public void refreshFromEngine() {
+        refreshSnapshot();
+    }
+
+    /** Stop the animation loop. Call from the host Application on window close. */
+    public void stopAnimation() {
+        if (timer != null) {
+            timer.stop();
+            timer = null;
+        }
     }
 
     // ── HUD & toolbar ────────────────────────────────────────────────────────
@@ -275,7 +169,10 @@ public class GardenGame extends Application {
             throwEvent(new ParasiteEvent(pool[random.nextInt(pool.length)]), "Pests invaded the garden!");
         });
         Button logState = btn("📋 Log State");
-        logState.setOnAction(e -> safe(engine::logCurrentState));
+        logState.setOnAction(e -> {
+            safe(engine::logCurrentState);
+            onStateChanged.run();
+        });
 
         Label spd = new Label("Speed:");
         style(spd, "#9fd4ad", 13, false);
@@ -318,10 +215,32 @@ public class GardenGame extends Application {
 
     // ── Autonomous simulation driver ──────────────────────────────────────────
 
+    private void startAnimation() {
+        timer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                if (lastNanos == 0) {
+                    lastNanos = now;
+                    return;
+                }
+                double dt = (now - lastNanos) / 1_000_000_000.0;
+                lastNanos = now;
+                if (dt > 0.1) {
+                    dt = 0.1;
+                }
+                try {
+                    update(dt);
+                    render();
+                } catch (Throwable t) {
+                    System.err.println("[GameView] frame error contained: " + t);
+                }
+            }
+        };
+        timer.start();
+    }
+
     private void update(double dt) {
         worldTime += dt;
-        // Advance simulated days automatically. The modules — not the player —
-        // decide whether plants live, so the garden runs unattended.
         dayAccumulator += dt * speed;
         while (dayAccumulator >= SECONDS_PER_DAY) {
             dayAccumulator -= SECONDS_PER_DAY;
@@ -352,10 +271,12 @@ public class GardenGame extends Application {
                         + snapshot.alivePlants() + " plants thriving!");
             }
         }
+        onStateChanged.run();
     }
 
     private void syncSprites() {
         List<GardenSnapshot.PlantView> plants = snapshot.plants();
+        resizeCanvasFor(plants.size());
         if (sprites.size() != plants.size()) {
             sprites.clear();
             for (int i = 0; i < plants.size(); i++) {
@@ -371,13 +292,25 @@ public class GardenGame extends Application {
         }
     }
 
+    /** Grow the canvas so every plant row is reachable via the surrounding ScrollPane. */
+    private void resizeCanvasFor(int plantCount) {
+        double newHeight = computeCanvasHeight(plantCount);
+        if (Math.abs(canvas.getHeight() - newHeight) > 0.5) {
+            canvas.setHeight(newHeight);
+        }
+    }
+
+    private static double computeCanvasHeight(int plantCount) {
+        int rows = Math.max(1, (int) Math.ceil(plantCount / (double) COLS));
+        return TOP + rows * CELL_H + BOTTOM_PAD;
+    }
+
     // ── Module device animations (driven purely by live state) ────────────────
 
     private double sprinkleTimer = 0;
     private double fertilizeTimer = 0;
 
     private void updateDevices(double dt) {
-        // 1. WATERING — spray thirsty plants.
         sprinkleTimer -= dt;
         if (sprinkleTimer <= 0) {
             sprinkleTimer = 0.05;
@@ -391,7 +324,6 @@ public class GardenGame extends Application {
             }
         }
 
-        // 2. PEST CONTROL — dispatch a drone to each infested plant.
         for (PlantSprite s : sprites) {
             if (s.alive && s.infested && !s.hasDrone) {
                 Drone d = new Drone(s);
@@ -400,7 +332,6 @@ public class GardenGame extends Application {
             }
         }
 
-        // 3. FERTILIZER — sprinkle granules when soil is poor.
         fertilizeTimer -= dt;
         if (fertilizeTimer <= 0 && snapshot.soilNutrients() < SOIL_LOW) {
             fertilizeTimer = 0.08;
@@ -423,14 +354,14 @@ public class GardenGame extends Application {
     }
 
     private void updateParticles(double dt) {
+        double maxY = canvas.getHeight();
         for (Particle p : particles) {
             p.x += p.vx * dt;
             p.y += p.vy * dt;
             p.vy += p.gravity * dt;
             p.life -= dt;
         }
-        particles.removeIf(p -> p.life <= 0 || p.y > CANVAS_H + 20);
-        // Safety cap so a long unattended run never accumulates particles.
+        particles.removeIf(p -> p.life <= 0 || p.y > maxY + 20);
         while (particles.size() > 600) {
             particles.remove(0);
         }
@@ -458,7 +389,9 @@ public class GardenGame extends Application {
     }
 
     private void drawBackground() {
-        gc.clearRect(0, 0, CANVAS_W, CANVAS_H);
+        double w = canvas.getWidth();
+        double h = canvas.getHeight();
+        gc.clearRect(0, 0, w, h);
         double horizon = TOP - 40;
 
         // ── Sky: soft vertical gradient ───────────────────────────────────────
@@ -466,10 +399,10 @@ public class GardenGame extends Application {
                 new Stop(0, Color.web("#aee3ff")),
                 new Stop(0.6, Color.web("#cdeffd")),
                 new Stop(1, Color.web("#eafbf0"))));
-        gc.fillRect(0, 0, CANVAS_W, horizon);
+        gc.fillRect(0, 0, w, horizon);
 
         // Sun with a soft glow, drifting slightly with time.
-        double sunX = CANVAS_W - 130 + Math.sin(worldTime * 0.2) * 8;
+        double sunX = w - 130 + Math.sin(worldTime * 0.2) * 8;
         double sunY = 64;
         gc.setFill(new RadialGradient(0, 0, sunX, sunY, 90, false, CycleMethod.NO_CYCLE,
                 new Stop(0, Color.color(1, 0.95, 0.6, 0.55)),
@@ -482,8 +415,8 @@ public class GardenGame extends Application {
 
         // Drifting clouds.
         for (int i = 0; i < 3; i++) {
-            double speed = 14 + i * 6;
-            double cx = ((worldTime * speed) + i * 420) % (CANVAS_W + 220) - 110;
+            double cspeed = 14 + i * 6;
+            double cx = ((worldTime * cspeed) + i * 420) % (w + 220) - 110;
             double cy = 40 + i * 26;
             drawCloud(cx, cy, 1.0 - i * 0.12);
         }
@@ -492,29 +425,27 @@ public class GardenGame extends Application {
         gc.setFill(Color.web("#bfe6a4"));
         gc.beginPath();
         gc.moveTo(0, horizon);
-        for (double x = 0; x <= CANVAS_W; x += 40) {
+        for (double x = 0; x <= w; x += 40) {
             gc.lineTo(x, horizon - 22 - Math.sin(x / 160.0) * 14);
         }
-        gc.lineTo(CANVAS_W, horizon);
+        gc.lineTo(w, horizon);
         gc.closePath();
         gc.fill();
 
         // ── Lawn: gradient grass with alternating mowed stripes ───────────────
-        gc.setFill(new LinearGradient(0, horizon, 0, CANVAS_H, false, CycleMethod.NO_CYCLE,
+        gc.setFill(new LinearGradient(0, horizon, 0, h, false, CycleMethod.NO_CYCLE,
                 new Stop(0, Color.web("#7cc36b")),
                 new Stop(1, Color.web("#4f9b48"))));
-        gc.fillRect(0, horizon, CANVAS_W, CANVAS_H - horizon);
+        gc.fillRect(0, horizon, w, h - horizon);
 
         int rows = Math.max(1, (int) Math.ceil(sprites.size() / (double) COLS));
         for (int r = 0; r < rows; r++) {
             double y = horizon + r * CELL_H;
-            // Mowed stripe shading (cosmetic only).
             gc.setFill(r % 2 == 0 ? Color.color(1, 1, 1, 0.05) : Color.color(0, 0, 0, 0.05));
-            gc.fillRect(0, y, CANVAS_W, CELL_H);
+            gc.fillRect(0, y, w, CELL_H);
 
-            // Soil bed: rounded planter with rim highlight + dark earth.
             double bx = MARGIN_X - 34;
-            double bw = CANVAS_W - (MARGIN_X - 34) * 2;
+            double bw = w - (MARGIN_X - 34) * 2;
             double by = y + CELL_H - 30;
             gc.setFill(new LinearGradient(0, by, 0, by + 26, false, CycleMethod.NO_CYCLE,
                     new Stop(0, Color.web("#8a6a3f")),
@@ -523,7 +454,6 @@ public class GardenGame extends Application {
             gc.setStroke(Color.web("#3a2a16"));
             gc.setLineWidth(2);
             gc.strokeRoundRect(bx, by, bw, 26, 12, 12);
-            // Speckle the soil for a little texture.
             gc.setFill(Color.color(0, 0, 0, 0.18));
             for (int s = 0; s < 26; s++) {
                 double sx = bx + 10 + ((s * 53) % (int) (bw - 20));
@@ -544,7 +474,6 @@ public class GardenGame extends Application {
     }
 
     private void drawPlant(PlantSprite s) {
-        // Soft ground shadow anchored to the soil (shrinks as a plant wilts).
         double shadow = s.alive ? 1.0 : (1 - s.wilt * 0.4);
         gc.setFill(Color.color(0, 0, 0, 0.16 * shadow));
         gc.fillOval(s.x - 26 * shadow, s.y + 4, 52 * shadow, 13);
@@ -562,7 +491,6 @@ public class GardenGame extends Application {
         drawPlantBody(s.type, !s.alive, s.infested);
         gc.restore();
 
-        // Name + health bar.
         gc.setFill(Color.web("#dfeede"));
         gc.setFont(javafx.scene.text.Font.font(11));
         gc.fillText(s.type.getDisplayName(), s.x - 24, s.y + 22);
@@ -572,9 +500,6 @@ public class GardenGame extends Application {
         }
     }
 
-    // Storybook-cartoon palette: every shape gets a soft radial gradient, a
-    // darker rounded outline, and a small highlight, which reads far nicer than
-    // flat ovals. Dead plants desaturate to muted browns.
     private static final Color OUTLINE = Color.web("#2b3a2b");
 
     /** Cartoon plant. Origin at soil base; grows upward (-y). */
@@ -582,7 +507,6 @@ public class GardenGame extends Application {
         Color stemHi = dead ? Color.web("#9a8456") : Color.web("#5fc66a");
         Color stemLo = dead ? Color.web("#6b5536") : Color.web("#2f8f3f");
 
-        // Stem: rounded, slightly curved, with a leaf pair near the base.
         gc.setLineCap(StrokeLineCap.ROUND);
         gc.setLineJoin(StrokeLineJoin.ROUND);
         gc.setStroke(stemLo);
@@ -660,7 +584,6 @@ public class GardenGame extends Application {
             default -> blossom(0, -50, 15, 15, c(dead, "#6fc97a", "#8a9a6f"), c(dead, "#3fae50", "#5f6f4a"));
         }
 
-        // Tiny bug markers when infested (cosmetic).
         if (infested && !dead) {
             gc.setFill(Color.web("#5b3f95"));
             gc.fillOval(9, -40, 7, 7);
@@ -672,12 +595,10 @@ public class GardenGame extends Application {
         }
     }
 
-    /** Pick the live or dead color for a shape. */
     private static Color c(boolean dead, String live, String deadHex) {
         return Color.web(dead ? deadHex : live);
     }
 
-    /** A glossy blossom: radial gradient body, dark outline, white highlight. */
     private void blossom(double cx, double cy, double rx, double ry, Color light, Color dark) {
         gc.setFill(new RadialGradient(0, 0, cx - rx * 0.3, cy - ry * 0.4, Math.max(rx, ry) * 1.3,
                 false, CycleMethod.NO_CYCLE, new Stop(0, light), new Stop(1, dark)));
@@ -689,7 +610,6 @@ public class GardenGame extends Application {
         gc.fillOval(cx - rx * 0.45, cy - ry * 0.6, rx * 0.5, ry * 0.5);
     }
 
-    /** A leaf blob with gradient + outline, rotated about its attach point. */
     private void leaf(double cx, double cy, double w, double h, double rotDeg, boolean dead) {
         gc.save();
         gc.translate(cx, cy);
@@ -703,7 +623,6 @@ public class GardenGame extends Application {
         gc.restore();
     }
 
-    /** A rounded body (cactus segment) with gradient + outline. */
     private void roundBlob(double x, double y, double w, double h, double arc, Color light, Color dark) {
         gc.setFill(new LinearGradient(x, y, x + w, y, false, CycleMethod.NO_CYCLE,
                 new Stop(0, light), new Stop(1, dark)));
@@ -713,7 +632,6 @@ public class GardenGame extends Application {
         gc.strokeRoundRect(x, y, w, h, arc, arc);
     }
 
-    /** Sprinkler nozzle + spray arcs at the base of a thirsty plant. */
     private void drawSprinkler(PlantSprite s) {
         gc.setFill(Color.web("#4a90c2"));
         gc.fillRect(s.x + 20, s.y - 8, 6, 12);
@@ -725,24 +643,22 @@ public class GardenGame extends Application {
         }
     }
 
-    /** Temperature module: shade canopy when too hot, heat lamps when too cold. */
     private void drawTemperatureDevice() {
         int temp = snapshot.ambientTemperature();
+        double w = canvas.getWidth();
         if (temp > COMFORT_MAX) {
-            // Cooling: sliding shade panels across the top.
             gc.setFill(Color.web("#1f6f8b"));
-            double w = CANVAS_W / 6.0;
+            double slice = w / 6.0;
             for (int i = 0; i < 6; i++) {
-                double x = i * w + Math.sin(worldTime * 2 + i) * 4;
-                gc.fillRoundRect(x + 6, 18, w - 12, 26, 8, 8);
+                double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
+                gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
             }
             gc.setFill(Color.web("#bfe9ff"));
             gc.setFont(javafx.scene.text.Font.font(13));
             gc.fillText("❄ Cooling / shade deployed (" + temp + "°F)", 24, 70);
         } else if (temp < COMFORT_MIN) {
-            // Heating: glowing lamps.
             for (int i = 0; i < 6; i++) {
-                double x = (i + 0.5) * (CANVAS_W / 6.0);
+                double x = (i + 0.5) * (w / 6.0);
                 double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
                 gc.setFill(Color.color(1, 0.5, 0.1, glow));
                 gc.fillOval(x - 18, 16, 36, 36);
@@ -759,10 +675,10 @@ public class GardenGame extends Application {
         int temp = snapshot.ambientTemperature();
         if (temp > COMFORT_MAX) {
             gc.setFill(Color.color(1, 0.4, 0.1, 0.10));
-            gc.fillRect(0, 0, CANVAS_W, CANVAS_H);
+            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         } else if (temp < COMFORT_MIN) {
             gc.setFill(Color.color(0.4, 0.6, 1, 0.12));
-            gc.fillRect(0, 0, CANVAS_W, CANVAS_H);
+            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         }
     }
 
@@ -779,12 +695,13 @@ public class GardenGame extends Application {
             return;
         }
         double alpha = Math.min(1, toastTimer);
+        double w = canvas.getWidth();
         gc.setGlobalAlpha(alpha);
         gc.setFill(Color.color(0, 0, 0, 0.6));
-        gc.fillRoundRect(CANVAS_W / 2.0 - 200, 90, 400, 40, 12, 12);
+        gc.fillRoundRect(w / 2.0 - 200, 90, 400, 40, 12, 12);
         gc.setFill(Color.web("#eafff0"));
         gc.setFont(javafx.scene.text.Font.font(15));
-        gc.fillText(toastText, CANVAS_W / 2.0 - 185, 116);
+        gc.fillText(toastText, w / 2.0 - 185, 116);
         gc.setGlobalAlpha(1);
     }
 
@@ -804,7 +721,7 @@ public class GardenGame extends Application {
         try {
             action.run();
         } catch (Throwable t) {
-            System.err.println("[GardenGame] engine call contained: " + t);
+            System.err.println("[GameView] engine call contained: " + t);
         }
     }
 
@@ -851,7 +768,7 @@ public class GardenGame extends Application {
             this.targetHealth = v.health();
             boolean nowAlive = !"DEAD".equals(v.status());
             if (nowAlive && !this.alive) {
-                this.pop = 1.0; // revived → pop animation
+                this.pop = 1.0;
             }
             this.alive = nowAlive;
             this.infested = "INFESTED".equals(v.status()) || !"-".equals(v.activeParasites());
@@ -884,13 +801,13 @@ public class GardenGame extends Application {
         final PlantSprite target;
         double x;
         double y;
-        double t;          // lifetime
+        double t;
         double sprayTimer;
 
         Drone(PlantSprite target) {
             this.target = target;
             this.x = target.x + 160;
-            this.y = 60;
+            this.y = Math.max(60, target.y - 220);
         }
 
         void update(double dt, List<Particle> particles, Random rnd) {
@@ -909,7 +826,6 @@ public class GardenGame extends Application {
         }
 
         boolean finished() {
-            // Leaves once the plant is no longer infested, or after a short visit.
             return (!target.infested && t > 0.6) || t > 6.0;
         }
 
@@ -986,9 +902,5 @@ public class GardenGame extends Application {
             gc.fillOval(x, y, size, size);
             gc.setGlobalAlpha(1);
         }
-    }
-
-    public static void main(String[] args) {
-        launch(args);
     }
 }

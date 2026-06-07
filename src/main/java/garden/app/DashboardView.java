@@ -6,14 +6,13 @@ import garden.event.RainEvent;
 import garden.event.TemperatureEvent;
 import garden.model.GardenSnapshot;
 import garden.model.PlantType;
-import javafx.application.Application;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -35,7 +34,6 @@ import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
-import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -44,8 +42,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class GardenApp extends Application {
-    private final SimulationEngine engine = new SimulationEngine();
+/**
+ * Admin dashboard view: tables, controls, status counters, and a live log
+ * panel. Lives inside the unified {@link GardenShell} as one tab and reads
+ * from the shared {@link SimulationEngine}. Notifies the sibling view through
+ * {@link #setOnStateChanged(Runnable)} whenever the user fires an engine
+ * action, so the animated game tab stays in sync.
+ */
+public class DashboardView {
+    private final SimulationEngine engine;
+    private final BorderPane root = new BorderPane();
     private final GridPane gardenBoard = new GridPane();
     private final TableView<GardenSnapshot.PlantView> plantTable = new TableView<>();
     private final TextArea logArea = new TextArea();
@@ -60,12 +66,10 @@ public class GardenApp extends Application {
     private final Label infestedValue = new Label();
     private final Label deadStatusValue = new Label();
     private final Label logPathValue = new Label();
+    private Runnable onStateChanged = () -> {};
 
-    @Override
-    public void start(Stage stage) {
-        engine.initialize();
-
-        BorderPane root = new BorderPane();
+    public DashboardView(SimulationEngine engine) {
+        this.engine = engine;
         root.getStyleClass().add("root-pane");
         root.setTop(buildHeader());
         root.setLeft(buildControls());
@@ -73,14 +77,47 @@ public class GardenApp extends Application {
         root.setRight(buildStatusPanel());
         root.setBottom(buildLogPanel());
         refresh();
+    }
 
-        Scene scene = new Scene(root, 1280, 800);
-        scene.getStylesheets().add(getClass().getResource("/garden/app/garden.css").toExternalForm());
-        stage.setTitle("Computerized Garden Simulation");
-        stage.setMinWidth(1040);
-        stage.setMinHeight(680);
-        stage.setScene(scene);
-        stage.show();
+    public Node getRoot() {
+        return root;
+    }
+
+    public void setOnStateChanged(Runnable callback) {
+        this.onStateChanged = callback == null ? () -> {} : callback;
+    }
+
+    /** Pulls a fresh snapshot from the shared engine and redraws every widget. */
+    public void refresh() {
+        GardenSnapshot snapshot = engine.snapshot();
+        dayValue.setText(Integer.toString(snapshot.day()));
+        aliveValue.setText(Integer.toString(snapshot.alivePlants()));
+        deadValue.setText(Integer.toString(snapshot.deadPlants()));
+        soilValue.setText(snapshot.soilNutrients() + "%");
+        temperatureValue.setText(snapshot.ambientTemperature() + "F");
+        logPathValue.setText(engine.getLogPath().toAbsolutePath().toString());
+
+        Map<String, Long> statusCounts = snapshot.plants().stream()
+                .collect(Collectors.groupingBy(GardenSnapshot.PlantView::status, Collectors.counting()));
+        healthyValue.setText(count(statusCounts, "HEALTHY"));
+        recoveringValue.setText(count(statusCounts, "RECOVERING"));
+        stressedValue.setText(count(statusCounts, "STRESSED"));
+        infestedValue.setText(count(statusCounts, "INFESTED"));
+        deadStatusValue.setText(count(statusCounts, "DEAD"));
+
+        plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
+        renderGardenBoard(snapshot.plants());
+        try {
+            logArea.setText(Files.readString(engine.getLogPath()));
+            logArea.positionCaret(logArea.getLength());
+        } catch (IOException e) {
+            logArea.setText("Unable to read log: " + e.getMessage());
+        }
+    }
+
+    private void notifyChanged() {
+        refresh();
+        onStateChanged.run();
     }
 
     private VBox buildHeader() {
@@ -110,19 +147,19 @@ public class GardenApp extends Application {
         Button rainButton = primaryButton("Rain");
         rainButton.setOnAction(event -> {
             engine.submitEvent(new RainEvent(rainAmount.getValue()));
-            refresh();
+            notifyChanged();
         });
 
         Button tempButton = primaryButton("Set Temperature");
         tempButton.setOnAction(event -> {
             engine.submitEvent(new TemperatureEvent(temperature.getValue()));
-            refresh();
+            notifyChanged();
         });
 
         Button pestButton = primaryButton("Trigger Parasite");
         pestButton.setOnAction(event -> {
             engine.submitEvent(new ParasiteEvent(parasiteField.getText()));
-            refresh();
+            notifyChanged();
         });
 
         GridPane events = new GridPane();
@@ -137,19 +174,19 @@ public class GardenApp extends Application {
         Button nextDay = secondaryButton("Advance Day");
         nextDay.setOnAction(event -> {
             engine.advanceOneDay();
-            refresh();
+            notifyChanged();
         });
 
         Button stateButton = secondaryButton("Log State");
         stateButton.setOnAction(event -> {
             engine.logCurrentState();
-            refresh();
+            notifyChanged();
         });
 
         Button resetButton = secondaryButton("Reset Garden");
         resetButton.setOnAction(event -> {
             engine.initialize();
-            refresh();
+            notifyChanged();
         });
 
         ComboBox<String> plantTypeCombo = new ComboBox<>(
@@ -164,7 +201,7 @@ public class GardenApp extends Application {
             String selected = plantTypeCombo.getValue();
             if (selected != null) {
                 engine.addPlant(PlantType.fromName(selected));
-                refresh();
+                notifyChanged();
             }
         });
 
@@ -282,33 +319,6 @@ public class GardenApp extends Application {
         box.getStyleClass().add("log-panel");
         VBox.setVgrow(logArea, Priority.ALWAYS);
         return box;
-    }
-
-    private void refresh() {
-        GardenSnapshot snapshot = engine.snapshot();
-        dayValue.setText(Integer.toString(snapshot.day()));
-        aliveValue.setText(Integer.toString(snapshot.alivePlants()));
-        deadValue.setText(Integer.toString(snapshot.deadPlants()));
-        soilValue.setText(snapshot.soilNutrients() + "%");
-        temperatureValue.setText(snapshot.ambientTemperature() + "F");
-        logPathValue.setText(engine.getLogPath().toAbsolutePath().toString());
-
-        Map<String, Long> statusCounts = snapshot.plants().stream()
-                .collect(Collectors.groupingBy(GardenSnapshot.PlantView::status, Collectors.counting()));
-        healthyValue.setText(count(statusCounts, "HEALTHY"));
-        recoveringValue.setText(count(statusCounts, "RECOVERING"));
-        stressedValue.setText(count(statusCounts, "STRESSED"));
-        infestedValue.setText(count(statusCounts, "INFESTED"));
-        deadStatusValue.setText(count(statusCounts, "DEAD"));
-
-        plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
-        renderGardenBoard(snapshot.plants());
-        try {
-            logArea.setText(Files.readString(engine.getLogPath()));
-            logArea.positionCaret(logArea.getLength());
-        } catch (IOException e) {
-            logArea.setText("Unable to read log: " + e.getMessage());
-        }
     }
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
@@ -452,9 +462,5 @@ public class GardenApp extends Application {
         column.setCellValueFactory(cell -> new SimpleIntegerProperty(value.applyAsInt(cell.getValue())));
         column.setPrefWidth(width);
         return column;
-    }
-
-    public static void main(String[] args) {
-        launch(args);
     }
 }
