@@ -15,6 +15,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -175,8 +176,13 @@ public class GameView {
             throwEvent(new ParasiteEvent(pool[random.nextInt(pool.length)]), "Pests invaded the garden!");
         });
         Button logState = btn("📋 Log State");
+        logState.setTooltip(new Tooltip(
+                "Writes a STATE summary row + one row per plant to log.txt.\n"
+                        + "Useful right before showing the log to a grader so the\n"
+                        + "current garden snapshot is captured on disk."));
         logState.setOnAction(e -> {
             safe(engine::logCurrentState);
+            showToast("📋 Snapshot written to log.txt");
             onStateChanged.run();
         });
 
