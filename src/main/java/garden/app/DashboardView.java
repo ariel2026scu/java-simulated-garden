@@ -24,7 +24,6 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -37,9 +36,11 @@ import javafx.scene.shape.Circle;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -141,8 +142,11 @@ public class DashboardView {
     private VBox buildControls() {
         Spinner<Integer> rainAmount = new Spinner<>(0, 45, 10);
         Spinner<Integer> temperature = new Spinner<>(40, 120, 72);
-        TextField parasiteField = new TextField("aphid");
-        parasiteField.setPrefColumnCount(12);
+        ComboBox<String> parasiteField = new ComboBox<>(
+                FXCollections.observableArrayList(buildParasiteOptions()));
+        parasiteField.setValue("insects");
+        parasiteField.setEditable(true);
+        parasiteField.setPrefWidth(160);
 
         Button rainButton = primaryButton("Rain");
         rainButton.setOnAction(event -> {
@@ -158,7 +162,8 @@ public class DashboardView {
 
         Button pestButton = primaryButton("Trigger Parasite");
         pestButton.setOnAction(event -> {
-            engine.submitEvent(new ParasiteEvent(parasiteField.getText()));
+            String selection = parasiteField.getValue();
+            engine.submitEvent(new ParasiteEvent(selection == null ? "" : selection));
             notifyChanged();
         });
 
@@ -416,6 +421,24 @@ public class DashboardView {
 
     private String count(Map<String, Long> statusCounts, String key) {
         return Long.toString(statusCounts.getOrDefault(key, 0L));
+    }
+
+    /**
+     * All parasite names defined on any {@link PlantType}, sorted alphabetically,
+     * plus the generic "insects" entry up front. "insects" hits multiple plants
+     * at once via the PestControlSystem's per-plant vulnerability mapping, so
+     * it is the default — picking it makes the parasite event visibly affect
+     * the whole garden rather than just plants vulnerable to one specific pest.
+     */
+    private List<String> buildParasiteOptions() {
+        TreeSet<String> known = new TreeSet<>();
+        for (PlantType type : PlantType.values()) {
+            known.addAll(type.getParasites());
+        }
+        List<String> options = new ArrayList<>(known.size() + 1);
+        options.add("insects");
+        options.addAll(known);
+        return options;
     }
 
     private TableCell<GardenSnapshot.PlantView, Number> progressCell(int maxValue) {
