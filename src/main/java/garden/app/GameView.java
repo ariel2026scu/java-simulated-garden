@@ -311,7 +311,22 @@ public class GameView {
     }
 
     private void refreshSnapshot() {
+        int prevTemp = snapshot == null ? 72 : snapshot.ambientTemperature();
         snapshot = engine.snapshot();
+        int newTemp = snapshot.ambientTemperature();
+        // If a temperature change came from somewhere other than this view's
+        // own toolbar (e.g. the dashboard's "Set Temperature" button) the local
+        // triggerWeatherEffect never ran. Detect the change here so the game
+        // tab animates regardless of which tab fired the event.
+        if (newTemp != prevTemp) {
+            if (newTemp > COMFORT_MAX) {
+                weatherEffect = WeatherEffect.HEAT;
+                weatherEffectTimer = 3.0;
+            } else if (newTemp < COMFORT_MIN) {
+                weatherEffect = WeatherEffect.COLD;
+                weatherEffectTimer = 3.0;
+            }
+        }
         syncSprites();
         if (snapshot.day() >= lastDayMilestone + 5) {
             lastDayMilestone = (snapshot.day() / 5) * 5;
@@ -422,7 +437,6 @@ public class GameView {
 
     private void render() {
         drawBackground();
-        drawTemperatureDevice();
         for (Particle p : particles) {
             p.draw(gc);
         }
@@ -435,12 +449,22 @@ public class GameView {
         for (Drone d : drones) {
             d.draw(gc);
         }
-        drawWeatherTint();
+        // Both the persistent weather tint and the climate-control device
+        // (shade panels / heat lamps) are now gated on the weather-effect
+        // timer below, so a temperature event reads as a dramatic 3-second
+        // wave instead of an immortal overlay glued to the canvas.
         drawWeatherEffect();
         drawToast();
     }
 
-    /** Transient pulsing overlay drawn for a few seconds after a weather event. */
+    /**
+     * Transient pulsing overlay drawn for a few seconds after a weather event,
+     * plus the matching climate-control device animation at the top of the
+     * canvas. The status text leads with the threat icon (🔥 for heat wave,
+     * ❄ for cold snap) so it visibly matches the button the gardener pressed,
+     * while the device beneath represents the response the control system is
+     * deploying (cooling shade panels vs. heat lamps).
+     */
     private void drawWeatherEffect() {
         if (weatherEffect == WeatherEffect.NONE || weatherEffectTimer <= 0) {
             return;
@@ -449,6 +473,7 @@ public class GameView {
         double h = canvas.getHeight();
         double fade = Math.min(1, weatherEffectTimer);
         double pulse = 0.5 + 0.5 * Math.sin(weatherEffectTimer * 8);
+        int temp = snapshot.ambientTemperature();
         switch (weatherEffect) {
             case RAIN -> {
                 // Slight blue desaturation so the raindrops read against bright
@@ -459,10 +484,32 @@ public class GameView {
             case HEAT -> {
                 gc.setFill(Color.color(1, 0.45, 0.05, 0.18 * pulse * fade));
                 gc.fillRect(0, 0, w, h);
+                // Cooling shade panels sliding into place.
+                gc.setFill(Color.web("#1f6f8b"));
+                double slice = w / 6.0;
+                for (int i = 0; i < 6; i++) {
+                    double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
+                    gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
+                }
+                gc.setFill(Color.web("#ffd089"));
+                gc.setFont(javafx.scene.text.Font.font(13));
+                gc.fillText("🔥 Heat wave! Cooling shade deployed (" + temp + "°F)", 24, 70);
             }
             case COLD -> {
                 gc.setFill(Color.color(0.4, 0.65, 1.0, 0.22 * pulse * fade));
                 gc.fillRect(0, 0, w, h);
+                // Heat lamps lighting up.
+                for (int i = 0; i < 6; i++) {
+                    double x = (i + 0.5) * (w / 6.0);
+                    double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
+                    gc.setFill(Color.color(1, 0.5, 0.1, glow));
+                    gc.fillOval(x - 18, 16, 36, 36);
+                    gc.setFill(Color.web("#ffd089"));
+                    gc.fillOval(x - 8, 24, 16, 16);
+                }
+                gc.setFill(Color.web("#bfe9ff"));
+                gc.setFont(javafx.scene.text.Font.font(13));
+                gc.fillText("❄ Cold snap! Heat lamps engaged (" + temp + "°F)", 24, 70);
             }
             default -> {
             }
@@ -721,45 +768,6 @@ public class GameView {
         for (int i = 0; i < 3; i++) {
             double r = 14 + i * 8 + Math.sin(worldTime * 6 + i) * 2;
             gc.strokeArc(s.x + 23 - r, s.y - 4 - r, r * 2, r * 2, 20, 110, javafx.scene.shape.ArcType.OPEN);
-        }
-    }
-
-    private void drawTemperatureDevice() {
-        int temp = snapshot.ambientTemperature();
-        double w = canvas.getWidth();
-        if (temp > COMFORT_MAX) {
-            gc.setFill(Color.web("#1f6f8b"));
-            double slice = w / 6.0;
-            for (int i = 0; i < 6; i++) {
-                double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
-                gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
-            }
-            gc.setFill(Color.web("#bfe9ff"));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("❄ Cooling / shade deployed (" + temp + "°F)", 24, 70);
-        } else if (temp < COMFORT_MIN) {
-            for (int i = 0; i < 6; i++) {
-                double x = (i + 0.5) * (w / 6.0);
-                double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
-                gc.setFill(Color.color(1, 0.5, 0.1, glow));
-                gc.fillOval(x - 18, 16, 36, 36);
-                gc.setFill(Color.web("#ffd089"));
-                gc.fillOval(x - 8, 24, 16, 16);
-            }
-            gc.setFill(Color.web("#ffd089"));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("🔥 Heat lamps on (" + temp + "°F)", 24, 70);
-        }
-    }
-
-    private void drawWeatherTint() {
-        int temp = snapshot.ambientTemperature();
-        if (temp > COMFORT_MAX) {
-            gc.setFill(Color.color(1, 0.4, 0.1, 0.10));
-            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        } else if (temp < COMFORT_MIN) {
-            gc.setFill(Color.color(0.4, 0.6, 1, 0.12));
-            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         }
     }
 
