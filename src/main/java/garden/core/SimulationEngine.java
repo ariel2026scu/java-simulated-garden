@@ -122,7 +122,11 @@ public class SimulationEngine {
                 garden.getAlivePlants().size(),
                 garden.getDeadPlants().size(),
                 garden.getSoilNutrients(),
-                garden.getAmbientTemperature(),
+                // Use the persistent last-observed reading rather than the
+                // moment-to-moment ambientTemperature, which is reset to 72°F
+                // by the end-of-day update and would otherwise hide every
+                // temperature event from the UI.
+                garden.getLastObservedTemperature(),
                 plantViews
         );
     }

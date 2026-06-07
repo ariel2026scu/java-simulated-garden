@@ -25,6 +25,11 @@ public class TemperatureControlSystem implements GardenModule {
                 adjustedTemperature -= 10;
             }
             garden.setAmbientTemperature(adjustedTemperature);
+            // Persist the conditioned reading for the UI: ambientTemperature
+            // gets reset to the 72°F baseline at end of day (per API spec), so
+            // without this the dashboard / game HUD would always read 72°F a
+            // moment after the user fires a temperature event.
+            garden.setLastObservedTemperature(adjustedTemperature);
             context.log(event.name(), event.value(), getName(), "CLIMATE_RESPONSE", garden,
                     "Outside temperature " + rawTemperature + "F adjusted to " + adjustedTemperature + "F.");
         }
