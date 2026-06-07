@@ -140,8 +140,8 @@ public class DashboardView {
     }
 
     private VBox buildControls() {
-        Spinner<Integer> rainAmount = new Spinner<>(0, 45, 10);
-        Spinner<Integer> temperature = new Spinner<>(40, 120, 72);
+        Spinner<Integer> rainAmount = editableSpinner(0, 45, 10);
+        Spinner<Integer> temperature = editableSpinner(40, 120, 72);
         ComboBox<String> parasiteField = new ComboBox<>(
                 FXCollections.observableArrayList(buildParasiteOptions()));
         parasiteField.setValue("insects");
@@ -421,6 +421,27 @@ public class DashboardView {
 
     private String count(Map<String, Long> statusCounts, String key) {
         return Long.toString(statusCounts.getOrDefault(key, 0L));
+    }
+
+    /**
+     * A range-clamped integer Spinner whose editor is keyboard-editable.
+     * Without commitValue() on focus loss, JavaFX Spinners ignore typed input
+     * unless the user presses Enter — so the typed value silently disappears
+     * when they click a button.
+     */
+    private Spinner<Integer> editableSpinner(int min, int max, int initial) {
+        Spinner<Integer> spinner = new Spinner<>(min, max, initial);
+        spinner.setEditable(true);
+        spinner.getEditor().focusedProperty().addListener((obs, was, isNow) -> {
+            if (!isNow) {
+                try {
+                    spinner.commitValue();
+                } catch (RuntimeException ignored) {
+                    // Bad input — leave the previous value untouched.
+                }
+            }
+        });
+        return spinner;
     }
 
     /**
