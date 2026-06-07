@@ -82,6 +82,12 @@ public class GameView {
     private double toastTimer = 0;
     private String toastText = "";
 
+    /** Transient post-event visual effect: rain shower, heat-wave flash, or cold-snap flash. */
+    private enum WeatherEffect { NONE, RAIN, HEAT, COLD }
+    private WeatherEffect weatherEffect = WeatherEffect.NONE;
+    private double weatherEffectTimer = 0;
+    private double rainSpawnAccumulator = 0;
+
     private final Label dayLabel = new Label();
     private final Label aliveLabel = new Label();
     private final Label envLabel = new Label();
@@ -211,6 +217,24 @@ public class GameView {
         safe(() -> engine.submitEvent(event));
         refreshSnapshot();
         showToast(toast);
+        triggerWeatherEffect(event);
+    }
+
+    /** Kick off the matching visual effect for the event the gardener just fired. */
+    private void triggerWeatherEffect(garden.event.GardenEvent event) {
+        if (event instanceof garden.event.RainEvent) {
+            weatherEffect = WeatherEffect.RAIN;
+            weatherEffectTimer = 3.0;
+        } else if (event instanceof garden.event.TemperatureEvent te) {
+            int temp = te.temperature();
+            if (temp > COMFORT_MAX) {
+                weatherEffect = WeatherEffect.HEAT;
+                weatherEffectTimer = 3.0;
+            } else if (temp < COMFORT_MIN) {
+                weatherEffect = WeatherEffect.COLD;
+                weatherEffectTimer = 3.0;
+            }
+        }
     }
 
     // ── Autonomous simulation driver ──────────────────────────────────────────
@@ -253,12 +277,31 @@ public class GameView {
         }
         updateDevices(dt);
         updateDrones(dt);
+        updateWeatherEffect(dt);
         updateParticles(dt);
 
         if (toastTimer > 0) {
             toastTimer -= dt;
         }
         refreshHud();
+    }
+
+    private void updateWeatherEffect(double dt) {
+        if (weatherEffectTimer <= 0) {
+            weatherEffect = WeatherEffect.NONE;
+            return;
+        }
+        weatherEffectTimer -= dt;
+        if (weatherEffect == WeatherEffect.RAIN) {
+            // Spawn a steady stream of raindrops across the top of the canvas.
+            rainSpawnAccumulator += dt;
+            int toSpawn = (int) (rainSpawnAccumulator / 0.015);
+            rainSpawnAccumulator -= toSpawn * 0.015;
+            double w = canvas.getWidth();
+            for (int i = 0; i < toSpawn; i++) {
+                particles.add(Particle.rainstreak(random.nextDouble() * w, -8));
+            }
+        }
     }
 
     private void refreshSnapshot() {
@@ -362,7 +405,9 @@ public class GameView {
             p.life -= dt;
         }
         particles.removeIf(p -> p.life <= 0 || p.y > maxY + 20);
-        while (particles.size() > 600) {
+        // Cap is high enough to host a full rain shower (~600 streaks) plus the
+        // usual sprinkler / drone / fertilizer particles concurrently.
+        while (particles.size() > 1500) {
             particles.remove(0);
         }
     }
@@ -385,7 +430,37 @@ public class GameView {
             d.draw(gc);
         }
         drawWeatherTint();
+        drawWeatherEffect();
         drawToast();
+    }
+
+    /** Transient pulsing overlay drawn for a few seconds after a weather event. */
+    private void drawWeatherEffect() {
+        if (weatherEffect == WeatherEffect.NONE || weatherEffectTimer <= 0) {
+            return;
+        }
+        double w = canvas.getWidth();
+        double h = canvas.getHeight();
+        double fade = Math.min(1, weatherEffectTimer);
+        double pulse = 0.5 + 0.5 * Math.sin(weatherEffectTimer * 8);
+        switch (weatherEffect) {
+            case RAIN -> {
+                // Slight blue desaturation so the raindrops read against bright
+                // grass; the streaks themselves come from the particle list.
+                gc.setFill(Color.color(0.4, 0.55, 0.85, 0.10 * fade));
+                gc.fillRect(0, 0, w, h);
+            }
+            case HEAT -> {
+                gc.setFill(Color.color(1, 0.45, 0.05, 0.18 * pulse * fade));
+                gc.fillRect(0, 0, w, h);
+            }
+            case COLD -> {
+                gc.setFill(Color.color(0.4, 0.65, 1.0, 0.22 * pulse * fade));
+                gc.fillRect(0, 0, w, h);
+            }
+            default -> {
+            }
+        }
     }
 
     private void drawBackground() {
@@ -856,6 +931,7 @@ public class GameView {
         double life;
         double size;
         Color color;
+        boolean streak;
 
         static Particle droplet(double x, double y) {
             Particle p = new Particle();
@@ -896,10 +972,31 @@ public class GameView {
             return p;
         }
 
+        /** Thin, fast-falling streak used by the rain weather effect. */
+        static Particle rainstreak(double x, double y) {
+            Particle p = new Particle();
+            p.x = x;
+            p.y = y;
+            p.vx = -40;
+            p.vy = 720 + Math.random() * 120;
+            p.gravity = 0;
+            p.life = 2.0;
+            p.size = 9 + Math.random() * 6;
+            p.color = Color.web("#9cc6ff");
+            p.streak = true;
+            return p;
+        }
+
         void draw(GraphicsContext gc) {
             gc.setGlobalAlpha(Math.max(0, Math.min(1, life)));
-            gc.setFill(color);
-            gc.fillOval(x, y, size, size);
+            if (streak) {
+                gc.setStroke(color);
+                gc.setLineWidth(1.4);
+                gc.strokeLine(x, y, x + 2, y + size);
+            } else {
+                gc.setFill(color);
+                gc.fillOval(x, y, size, size);
+            }
             gc.setGlobalAlpha(1);
         }
     }
