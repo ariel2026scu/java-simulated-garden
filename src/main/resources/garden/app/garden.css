@@ -1,0 +1,230 @@
+.root-pane {
+    -fx-background-color: #f5f7f4;
+    -fx-font-family: "Helvetica Neue", Arial, sans-serif;
+}
+
+.header {
+    -fx-padding: 14 16 10 16;
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent transparent #d8ded6 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.app-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #183229;
+}
+
+.metric {
+    -fx-padding: 7 10;
+    -fx-background-color: #eef3ef;
+    -fx-background-radius: 6;
+    -fx-border-color: #d7dfd9;
+    -fx-border-radius: 6;
+}
+
+.metric-name {
+    -fx-font-size: 12px;
+    -fx-text-fill: #55645c;
+}
+
+.metric-value {
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #173b2e;
+}
+
+.side-panel {
+    -fx-padding: 14;
+    -fx-spacing: 10;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d8ded6;
+}
+
+.board-panel {
+    -fx-padding: 0;
+    -fx-spacing: 8;
+}
+
+.garden-board {
+    -fx-background-color: linear-gradient(to bottom, #92c96b, #6fae52);
+    -fx-background-radius: 8;
+    -fx-border-color: #4f823f;
+    -fx-border-radius: 8;
+    -fx-border-width: 2;
+}
+
+.lawn-tile {
+    -fx-background-color: rgba(255,255,255,0.16);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(44, 93, 42, 0.35);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+
+.lawn-tile:hover {
+    -fx-background-color: rgba(255,255,255,0.28);
+}
+
+.plant-tile-content {
+    -fx-padding: 8;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-background-color: rgba(255,255,255,0.72);
+    -fx-border-color: rgba(34, 67, 38, 0.28);
+}
+
+.plant-tile-content.healthy {
+    -fx-border-color: #438a4a;
+}
+
+.plant-tile-content.recovering {
+    -fx-border-color: #3b7f99;
+}
+
+.plant-tile-content.stressed {
+    -fx-border-color: #b48b1f;
+}
+
+.plant-tile-content.infested {
+    -fx-border-color: #b14b4b;
+}
+
+.plant-tile-content.dead {
+    -fx-opacity: 0.62;
+    -fx-background-color: rgba(230,232,229,0.78);
+}
+
+.plant-icon {
+    -fx-stroke: rgba(24, 48, 32, 0.55);
+    -fx-stroke-width: 2;
+}
+
+.plant-icon.rose {
+    -fx-fill: #d95573;
+}
+
+.plant-icon.tomato {
+    -fx-fill: #d84a38;
+}
+
+.plant-icon.lettuce {
+    -fx-fill: #73bf50;
+}
+
+.plant-icon.cactus {
+    -fx-fill: #4e9b61;
+}
+
+.plant-icon.sunflower {
+    -fx-fill: #e8b931;
+}
+
+.plant-icon.basil {
+    -fx-fill: #3f9f5f;
+}
+
+.plant-icon.pepper {
+    -fx-fill: #b94f2e;
+}
+
+.plant-icon.lavender {
+    -fx-fill: #8a75c9;
+}
+
+.tile-name {
+    -fx-font-size: 11px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #183229;
+}
+
+.tile-status {
+    -fx-font-size: 10px;
+    -fx-text-fill: #395248;
+}
+
+.tile-health {
+    -fx-pref-height: 7;
+}
+
+.form-grid {
+    -fx-hgap: 8;
+    -fx-vgap: 8;
+}
+
+.section-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #355246;
+}
+
+.primary-button {
+    -fx-background-color: #2f6f4e;
+    -fx-text-fill: white;
+    -fx-font-weight: 700;
+    -fx-background-radius: 6;
+    -fx-padding: 8 10;
+}
+
+.secondary-button {
+    -fx-background-color: #e9efe8;
+    -fx-text-fill: #1d3b31;
+    -fx-font-weight: 600;
+    -fx-background-radius: 6;
+    -fx-padding: 8 10;
+}
+
+.status-row {
+    -fx-padding: 7 9;
+    -fx-background-color: #f4f7f3;
+    -fx-background-radius: 6;
+}
+
+.status-value {
+    -fx-font-weight: 700;
+}
+
+.path-label {
+    -fx-font-size: 11px;
+    -fx-text-fill: #516057;
+}
+
+.log-panel {
+    -fx-padding: 8 12 12 12;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d8ded6 transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
+.log-area {
+    -fx-font-family: "Menlo", "Consolas", monospace;
+    -fx-font-size: 11px;
+}
+
+.table-view {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d8ded6;
+}
+
+.table-row-cell:healthy-row {
+    -fx-background-color: #edf7ee;
+}
+
+.table-row-cell:recovering-row {
+    -fx-background-color: #eaf4f8;
+}
+
+.table-row-cell:stressed-row {
+    -fx-background-color: #fff6d9;
+}
+
+.table-row-cell:infested-row {
+    -fx-background-color: #fde9e9;
+}
+
+.table-row-cell:dead-row {
+    -fx-background-color: #eceeed;
+    -fx-text-fill: #65706a;
+}
