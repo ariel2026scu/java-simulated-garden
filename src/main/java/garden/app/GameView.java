@@ -512,21 +512,29 @@ public class GameView {
             case HEAT -> {
                 gc.setFill(Color.color(1, 0.45, 0.05, 0.18 * pulse * fade));
                 gc.fillRect(0, 0, w, h);
-                // Cooling shade panels sliding into place.
+                // Cooling shade panels sliding into place, each tagged "SHADE"
+                // so the visual element is named without the gardener needing
+                // to read the banner first.
                 gc.setFill(Color.web("#1f6f8b"));
                 double slice = w / 6.0;
                 for (int i = 0; i < 6; i++) {
                     double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
                     gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
                 }
-                gc.setFill(Color.web("#ffd089"));
-                gc.setFont(javafx.scene.text.Font.font(13));
-                gc.fillText("🔥 Heat wave! Cooling shade deployed (" + temp + "°F)", 24, 70);
+                gc.setFill(Color.web("#dcefff"));
+                gc.setFont(javafx.scene.text.Font.font(9));
+                for (int i = 0; i < 6; i++) {
+                    double cx = i * slice + slice / 2;
+                    gc.fillText("SHADE", cx - 14, 36);
+                }
+                drawWeatherBanner("🔥 HEAT WAVE — Cooling shade panels deployed ("
+                        + temp + "°F)", 56);
             }
             case COLD -> {
                 gc.setFill(Color.color(0.4, 0.65, 1.0, 0.22 * pulse * fade));
                 gc.fillRect(0, 0, w, h);
-                // Heat lamps lighting up.
+                // Heat lamps lighting up, each tagged "HEAT LAMP" for the
+                // same reason as the shade panels above.
                 for (int i = 0; i < 6; i++) {
                     double x = (i + 0.5) * (w / 6.0);
                     double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
@@ -535,13 +543,42 @@ public class GameView {
                     gc.setFill(Color.web("#ffd089"));
                     gc.fillOval(x - 8, 24, 16, 16);
                 }
-                gc.setFill(Color.web("#bfe9ff"));
-                gc.setFont(javafx.scene.text.Font.font(13));
-                gc.fillText("❄ Cold snap! Heat lamps engaged (" + temp + "°F)", 24, 70);
+                gc.setFill(Color.web("#fff1c2"));
+                gc.setFont(javafx.scene.text.Font.font(9));
+                for (int i = 0; i < 6; i++) {
+                    double cx = (i + 0.5) * (w / 6.0);
+                    gc.fillText("HEAT LAMP", cx - 24, 64);
+                }
+                drawWeatherBanner("❄ COLD SNAP — Heat lamps engaged ("
+                        + temp + "°F)", 84);
             }
             default -> {
             }
         }
+    }
+
+    /**
+     * High-contrast banner pill (dark backdrop + white text) so the weather
+     * label is readable on top of the orange / blue tint overlays. The text
+     * pill auto-sizes from the rendered label width so longer messages don't
+     * overflow.
+     */
+    private void drawWeatherBanner(String text, double y) {
+        javafx.scene.text.Text probe = new javafx.scene.text.Text(text);
+        probe.setFont(javafx.scene.text.Font.font(15));
+        double textWidth = probe.getLayoutBounds().getWidth();
+        double padX = 16;
+        double padY = 6;
+        double pillW = textWidth + padX * 2;
+        double pillH = 26;
+        gc.setFill(Color.color(0, 0, 0, 0.6));
+        gc.fillRoundRect(20, y, pillW, pillH, 12, 12);
+        gc.setStroke(Color.color(1, 1, 1, 0.35));
+        gc.setLineWidth(1.0);
+        gc.strokeRoundRect(20, y, pillW, pillH, 12, 12);
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(15));
+        gc.fillText(text, 20 + padX, y + pillH - padY - 2);
     }
 
     private void drawBackground() {
