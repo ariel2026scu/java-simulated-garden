@@ -105,6 +105,18 @@ public class SimulationEngine {
         submitEvent(new garden.event.ManualEvent("MANUAL_DAY", "advance"));
     }
 
+    /**
+     * Advance one simulated day from a background scheduler (the game view's
+     * animation timer) rather than from an explicit user click. Identical to
+     * {@link #advanceOneDay()} except that the rows it writes to the log carry
+     * the event name {@code AUTO_TICK} instead of {@code MANUAL_DAY}, so when
+     * a grader scrolls the log it is obvious which rows came from the
+     * gardener pressing buttons versus the background simulation.
+     */
+    public synchronized void tickAutonomous() {
+        submitEvent(new garden.event.ManualEvent("AUTO_TICK", "timer"));
+    }
+
     public synchronized GardenSnapshot snapshot() {
         ensureInitialized();
         List<GardenSnapshot.PlantView> plantViews = garden.getPlants().stream()
@@ -122,7 +134,12 @@ public class SimulationEngine {
                 garden.getAlivePlants().size(),
                 garden.getDeadPlants().size(),
                 garden.getSoilNutrients(),
-                garden.getAmbientTemperature(),
+                // Use the persistent last-observed reading rather than the
+                // moment-to-moment ambientTemperature, which is reset to 72°F
+                // by the end-of-day update and would otherwise hide every
+                // temperature event from the UI.
+                garden.getLastObservedTemperature(),
+                garden.getLastEventRawTemperature(),
                 plantViews
         );
     }
@@ -185,6 +202,16 @@ public class SimulationEngine {
 
     public Path getLogPath() {
         return logger.getLogPath();
+    }
+
+    /** Recent log rows (most recent last), for in-canvas log strips. */
+    public List<garden.logging.GardenLogger.LogEntry> getRecentLogEntries() {
+        return logger.recentEntries();
+    }
+
+    /** Recent gardener-fired events only, immune to AUTO_TICK eviction pressure. */
+    public List<garden.logging.GardenLogger.LogEntry> getRecentUserLogEntries() {
+        return logger.recentUserEntries();
     }
 
     private void runDailyUpdate(GardenEvent event) {

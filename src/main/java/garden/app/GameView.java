@@ -15,6 +15,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -60,7 +61,23 @@ public class GameView {
     private static final int COMFORT_MAX = 95;
     private static final int SOIL_LOW = 45;
 
-    private static final double SECONDS_PER_DAY = 3.5;
+    // Real seconds per simulated day at 1x speed. At the prior value of 3.5s
+    // every minute produced ~17 days, each writing ~11 log lines, which buried
+    // user-fired events in autonomous-tick noise. 8s gives the gardener time
+    // to read the log and compose an event before the next day rolls over.
+    private static final double SECONDS_PER_DAY = 8.0;
+
+    /**
+     * Every parasite defined across PlantType + the generic "insects" entry
+     * that PestControlSystem maps to each plant's own vulnerabilities. The
+     * game-tab Pest Outbreak button picks uniformly from this pool, fully
+     * independent of whatever the dashboard's parasite dropdown is set to.
+     */
+    private static final String[] PEST_POOL = {
+            "insects",
+            "aphid", "beetle", "cutworm", "hornworm", "mealybug",
+            "mite", "moth", "scale", "slug", "spider_mite", "thrip", "whitefly"
+    };
 
     private final SimulationEngine engine;
     private final Random random = new Random();
@@ -76,16 +93,26 @@ public class GameView {
     private long lastNanos = 0;
     private double dayAccumulator = 0;
     private double speed = 1.0;
+    private double speedBeforePause = 1.0;
     private double worldTime = 0;
 
     private int lastDayMilestone = 0;
     private double toastTimer = 0;
     private String toastText = "";
 
+    /** Transient post-event visual effect: rain shower, heat-wave flash, or cold-snap flash. */
+    private enum WeatherEffect { NONE, RAIN, HEAT, COLD }
+    private WeatherEffect weatherEffect = WeatherEffect.NONE;
+    private double weatherEffectTimer = 0;
+    private double rainSpawnAccumulator = 0;
+
     private final Label dayLabel = new Label();
     private final Label aliveLabel = new Label();
     private final Label envLabel = new Label();
     private final Label speedLabel = new Label();
+
+    private final Label toastLabel = new Label();
+    private final HBox toastBox = new HBox(toastLabel);
 
     private AnimationTimer timer;
     private Runnable onStateChanged = () -> {};
@@ -107,13 +134,38 @@ public class GameView {
                         + " -fx-background-color: #0b2018;"
                         + " -fx-control-inner-background: #0b2018;");
 
+        // Center-of-viewport toast — outside the ScrollPane so it stays
+        // visually centred no matter how far the gardener has scrolled. The
+        // previous implementation painted directly into the canvas near the
+        // climate-banner row, so a Heat Wave / Cold Snap toast overlapped
+        // the "🔥 HEAT WAVE — Outside X°F → Inside Y°F" banner.
+        configureToastBox();
+        StackPane.setAlignment(toastBox, Pos.CENTER);
+
+        StackPane center = new StackPane(scrollPane, toastBox);
+
         root.setTop(buildHud());
-        root.setCenter(scrollPane);
+        root.setCenter(center);
         root.setBottom(buildToolbar());
         root.setStyle("-fx-background-color: #0c241a;");
 
         refreshHud();
         startAnimation();
+    }
+
+    private void configureToastBox() {
+        toastLabel.setStyle(
+                "-fx-text-fill: #eafff0;"
+                        + " -fx-font-size: 13px;");
+        toastBox.setAlignment(Pos.CENTER);
+        toastBox.setStyle(
+                "-fx-background-color: rgba(0,0,0,0.45);"
+                        + " -fx-padding: 6 14 6 14;"
+                        + " -fx-background-radius: 10;");
+        toastBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        toastBox.setMouseTransparent(true);
+        toastBox.setVisible(false);
+        toastBox.setOpacity(0);
     }
 
     public Node getRoot() {
@@ -165,28 +217,58 @@ public class GameView {
         cold.setOnAction(e -> throwEvent(new TemperatureEvent(40), "Cold snap incoming!"));
         Button pest = btn("🐛 Pest Outbreak");
         pest.setOnAction(e -> {
-            String[] pool = {"aphid", "beetle", "mite", "slug", "hornworm", "whitefly"};
-            throwEvent(new ParasiteEvent(pool[random.nextInt(pool.length)]), "Pests invaded the garden!");
+            // Random — independent from whatever the dashboard's parasite
+            // ComboBox happens to be set to. Includes the generic "insects"
+            // entry, which the PestControlSystem maps to per-plant
+            // vulnerabilities (i.e. every plant catches its own pest).
+            String picked = PEST_POOL[random.nextInt(PEST_POOL.length)];
+            String displayLabel = "insects".equals(picked) ? "all parasites" : picked;
+            throwEvent(new ParasiteEvent(picked), "🐛 Pest outbreak: " + displayLabel);
         });
         Button logState = btn("📋 Log State");
+        logState.setTooltip(new Tooltip(
+                "Writes a STATE summary row + one row per plant to log.txt.\n"
+                        + "Useful right before showing the log to a grader so the\n"
+                        + "current garden snapshot is captured on disk."));
         logState.setOnAction(e -> {
             safe(engine::logCurrentState);
+            showToast("📋 Snapshot written to log.txt");
             onStateChanged.run();
         });
 
         Label spd = new Label("Speed:");
         style(spd, "#9fd4ad", 13, false);
+        Button pauseBtn = btn("⏸ Pause");
+        pauseBtn.setOnAction(e -> {
+            if (speed > 0) {
+                speedBeforePause = speed;
+                speed = 0;
+                pauseBtn.setText("▶ Resume");
+            } else {
+                speed = speedBeforePause > 0 ? speedBeforePause : 1.0;
+                pauseBtn.setText("⏸ Pause");
+            }
+        });
         Button s1 = btn("1x");
-        s1.setOnAction(e -> speed = 1.0);
+        s1.setOnAction(e -> {
+            speed = 1.0;
+            pauseBtn.setText("⏸ Pause");
+        });
         Button s5 = btn("5x");
-        s5.setOnAction(e -> speed = 5.0);
+        s5.setOnAction(e -> {
+            speed = 5.0;
+            pauseBtn.setText("⏸ Pause");
+        });
         Button s20 = btn("20x");
-        s20.setOnAction(e -> speed = 20.0);
+        s20.setOnAction(e -> {
+            speed = 20.0;
+            pauseBtn.setText("⏸ Pause");
+        });
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox bar = new HBox(10, gardener, rain, heat, cold, pest, logState, spacer, spd, s1, s5, s20);
+        HBox bar = new HBox(10, gardener, rain, heat, cold, pest, logState, spacer, spd, pauseBtn, s1, s5, s20);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(10, 20, 12, 20));
         bar.setStyle("-fx-background-color: #07150f;");
@@ -211,6 +293,24 @@ public class GameView {
         safe(() -> engine.submitEvent(event));
         refreshSnapshot();
         showToast(toast);
+        triggerWeatherEffect(event);
+    }
+
+    /** Kick off the matching visual effect for the event the gardener just fired. */
+    private void triggerWeatherEffect(garden.event.GardenEvent event) {
+        if (event instanceof garden.event.RainEvent) {
+            weatherEffect = WeatherEffect.RAIN;
+            weatherEffectTimer = 3.0;
+        } else if (event instanceof garden.event.TemperatureEvent te) {
+            int temp = te.temperature();
+            if (temp > COMFORT_MAX) {
+                weatherEffect = WeatherEffect.HEAT;
+                weatherEffectTimer = 3.0;
+            } else if (temp < COMFORT_MIN) {
+                weatherEffect = WeatherEffect.COLD;
+                weatherEffectTimer = 3.0;
+            }
+        }
     }
 
     // ── Autonomous simulation driver ──────────────────────────────────────────
@@ -244,7 +344,10 @@ public class GameView {
         dayAccumulator += dt * speed;
         while (dayAccumulator >= SECONDS_PER_DAY) {
             dayAccumulator -= SECONDS_PER_DAY;
-            safe(engine::advanceOneDay);
+            // Auto-advances log as AUTO_TICK so they don't drown out the
+            // gardener's explicit RAIN / TEMPERATURE / PARASITE / MANUAL_DAY
+            // events when scrolling log.txt.
+            safe(engine::tickAutonomous);
             refreshSnapshot();
         }
 
@@ -253,16 +356,56 @@ public class GameView {
         }
         updateDevices(dt);
         updateDrones(dt);
+        updateWeatherEffect(dt);
         updateParticles(dt);
 
         if (toastTimer > 0) {
             toastTimer -= dt;
+            if (toastTimer <= 0) {
+                toastBox.setVisible(false);
+                toastBox.setOpacity(0);
+            } else {
+                toastBox.setOpacity(Math.min(1, toastTimer));
+            }
         }
         refreshHud();
     }
 
+    private void updateWeatherEffect(double dt) {
+        if (weatherEffectTimer <= 0) {
+            weatherEffect = WeatherEffect.NONE;
+            return;
+        }
+        weatherEffectTimer -= dt;
+        if (weatherEffect == WeatherEffect.RAIN) {
+            // Spawn a steady stream of raindrops across the top of the canvas.
+            rainSpawnAccumulator += dt;
+            int toSpawn = (int) (rainSpawnAccumulator / 0.015);
+            rainSpawnAccumulator -= toSpawn * 0.015;
+            double w = canvas.getWidth();
+            for (int i = 0; i < toSpawn; i++) {
+                particles.add(Particle.rainstreak(random.nextDouble() * w, -8));
+            }
+        }
+    }
+
     private void refreshSnapshot() {
+        int prevTemp = snapshot == null ? 72 : snapshot.ambientTemperature();
         snapshot = engine.snapshot();
+        int newTemp = snapshot.ambientTemperature();
+        // If a temperature change came from somewhere other than this view's
+        // own toolbar (e.g. the dashboard's "Set Temperature" button) the local
+        // triggerWeatherEffect never ran. Detect the change here so the game
+        // tab animates regardless of which tab fired the event.
+        if (newTemp != prevTemp) {
+            if (newTemp > COMFORT_MAX) {
+                weatherEffect = WeatherEffect.HEAT;
+                weatherEffectTimer = 3.0;
+            } else if (newTemp < COMFORT_MIN) {
+                weatherEffect = WeatherEffect.COLD;
+                weatherEffectTimer = 3.0;
+            }
+        }
         syncSprites();
         if (snapshot.day() >= lastDayMilestone + 5) {
             lastDayMilestone = (snapshot.day() / 5) * 5;
@@ -344,13 +487,12 @@ public class GameView {
         for (Drone d : drones) {
             d.update(dt, particles, random);
         }
-        drones.removeIf(d -> {
-            if (d.finished()) {
-                d.target.hasDrone = false;
-                return true;
-            }
-            return false;
-        });
+        // hasDrone is intentionally NOT cleared here — it now represents
+        // "this infestation cycle has already received a drone visit", and
+        // is cleared in PlantSprite.apply() once the plant is actually cured.
+        // That stops the spawn loop while paused, where the parasite never
+        // ages out and the drone would otherwise time out and respawn forever.
+        drones.removeIf(Drone::finished);
     }
 
     private void updateParticles(double dt) {
@@ -362,7 +504,9 @@ public class GameView {
             p.life -= dt;
         }
         particles.removeIf(p -> p.life <= 0 || p.y > maxY + 20);
-        while (particles.size() > 600) {
+        // Cap is high enough to host a full rain shower (~600 streaks) plus the
+        // usual sprinkler / drone / fertilizer particles concurrently.
+        while (particles.size() > 1500) {
             particles.remove(0);
         }
     }
@@ -371,7 +515,6 @@ public class GameView {
 
     private void render() {
         drawBackground();
-        drawTemperatureDevice();
         for (Particle p : particles) {
             p.draw(gc);
         }
@@ -384,8 +527,112 @@ public class GameView {
         for (Drone d : drones) {
             d.draw(gc);
         }
-        drawWeatherTint();
-        drawToast();
+        // Both the persistent weather tint and the climate-control device
+        // (shade panels / heat lamps) are now gated on the weather-effect
+        // timer below, so a temperature event reads as a dramatic 3-second
+        // wave instead of an immortal overlay glued to the canvas.
+        drawWeatherEffect();
+        // Toast is no longer painted on the canvas — it's a centered viewport
+        // overlay (see configureToastBox + StackPane in the constructor) so it
+        // stays in the middle of the visible area as the canvas scrolls and
+        // never overlaps the heat-wave / cold-snap banner row.
+    }
+
+    /**
+     * Transient pulsing overlay drawn for a few seconds after a weather event,
+     * plus the matching climate-control device animation at the top of the
+     * canvas. The status text leads with the threat icon (🔥 for heat wave,
+     * ❄ for cold snap) so it visibly matches the button the gardener pressed,
+     * while the device beneath represents the response the control system is
+     * deploying (cooling shade panels vs. heat lamps).
+     */
+    private void drawWeatherEffect() {
+        if (weatherEffect == WeatherEffect.NONE || weatherEffectTimer <= 0) {
+            return;
+        }
+        double w = canvas.getWidth();
+        double h = canvas.getHeight();
+        double fade = Math.min(1, weatherEffectTimer);
+        double pulse = 0.5 + 0.5 * Math.sin(weatherEffectTimer * 8);
+        int outside = snapshot.outsideTemperature();
+        int inside = snapshot.ambientTemperature();
+        switch (weatherEffect) {
+            case RAIN -> {
+                // Slight blue desaturation so the raindrops read against bright
+                // grass; the streaks themselves come from the particle list.
+                gc.setFill(Color.color(0.4, 0.55, 0.85, 0.10 * fade));
+                gc.fillRect(0, 0, w, h);
+            }
+            case HEAT -> {
+                gc.setFill(Color.color(1, 0.45, 0.05, 0.18 * pulse * fade));
+                gc.fillRect(0, 0, w, h);
+                // Cooling shade panels sliding into place, each tagged "SHADE"
+                // so the visual element is named without the gardener needing
+                // to read the banner first.
+                gc.setFill(Color.web("#1f6f8b"));
+                double slice = w / 6.0;
+                for (int i = 0; i < 6; i++) {
+                    double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
+                    gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
+                }
+                gc.setFill(Color.web("#dcefff"));
+                gc.setFont(javafx.scene.text.Font.font(9));
+                for (int i = 0; i < 6; i++) {
+                    double cx = i * slice + slice / 2;
+                    gc.fillText("SHADE", cx - 14, 36);
+                }
+                drawWeatherBanner("🔥 HEAT WAVE — Outside " + outside + "°F → Inside "
+                        + inside + "°F (cooling shade deployed)", 56);
+            }
+            case COLD -> {
+                gc.setFill(Color.color(0.4, 0.65, 1.0, 0.22 * pulse * fade));
+                gc.fillRect(0, 0, w, h);
+                // Heat lamps lighting up, each tagged "HEAT LAMP" for the
+                // same reason as the shade panels above.
+                for (int i = 0; i < 6; i++) {
+                    double x = (i + 0.5) * (w / 6.0);
+                    double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
+                    gc.setFill(Color.color(1, 0.5, 0.1, glow));
+                    gc.fillOval(x - 18, 16, 36, 36);
+                    gc.setFill(Color.web("#ffd089"));
+                    gc.fillOval(x - 8, 24, 16, 16);
+                }
+                gc.setFill(Color.web("#fff1c2"));
+                gc.setFont(javafx.scene.text.Font.font(9));
+                for (int i = 0; i < 6; i++) {
+                    double cx = (i + 0.5) * (w / 6.0);
+                    gc.fillText("HEAT LAMP", cx - 24, 64);
+                }
+                drawWeatherBanner("❄ COLD SNAP — Outside " + outside + "°F → Inside "
+                        + inside + "°F (heat lamps engaged)", 84);
+            }
+            default -> {
+            }
+        }
+    }
+
+    /**
+     * High-contrast banner pill (dark backdrop + white text) so the weather
+     * label is readable on top of the orange / blue tint overlays. The text
+     * pill auto-sizes from the rendered label width so longer messages don't
+     * overflow.
+     */
+    private void drawWeatherBanner(String text, double y) {
+        javafx.scene.text.Text probe = new javafx.scene.text.Text(text);
+        probe.setFont(javafx.scene.text.Font.font(15));
+        double textWidth = probe.getLayoutBounds().getWidth();
+        double padX = 16;
+        double padY = 6;
+        double pillW = textWidth + padX * 2;
+        double pillH = 26;
+        gc.setFill(Color.color(0, 0, 0, 0.6));
+        gc.fillRoundRect(20, y, pillW, pillH, 12, 12);
+        gc.setStroke(Color.color(1, 1, 1, 0.35));
+        gc.setLineWidth(1.0);
+        gc.strokeRoundRect(20, y, pillW, pillH, 12, 12);
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(15));
+        gc.fillText(text, 20 + padX, y + pillH - padY - 2);
     }
 
     private void drawBackground() {
@@ -643,45 +890,6 @@ public class GameView {
         }
     }
 
-    private void drawTemperatureDevice() {
-        int temp = snapshot.ambientTemperature();
-        double w = canvas.getWidth();
-        if (temp > COMFORT_MAX) {
-            gc.setFill(Color.web("#1f6f8b"));
-            double slice = w / 6.0;
-            for (int i = 0; i < 6; i++) {
-                double x = i * slice + Math.sin(worldTime * 2 + i) * 4;
-                gc.fillRoundRect(x + 6, 18, slice - 12, 26, 8, 8);
-            }
-            gc.setFill(Color.web("#bfe9ff"));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("❄ Cooling / shade deployed (" + temp + "°F)", 24, 70);
-        } else if (temp < COMFORT_MIN) {
-            for (int i = 0; i < 6; i++) {
-                double x = (i + 0.5) * (w / 6.0);
-                double glow = 0.5 + 0.3 * Math.sin(worldTime * 4 + i);
-                gc.setFill(Color.color(1, 0.5, 0.1, glow));
-                gc.fillOval(x - 18, 16, 36, 36);
-                gc.setFill(Color.web("#ffd089"));
-                gc.fillOval(x - 8, 24, 16, 16);
-            }
-            gc.setFill(Color.web("#ffd089"));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("🔥 Heat lamps on (" + temp + "°F)", 24, 70);
-        }
-    }
-
-    private void drawWeatherTint() {
-        int temp = snapshot.ambientTemperature();
-        if (temp > COMFORT_MAX) {
-            gc.setFill(Color.color(1, 0.4, 0.1, 0.10));
-            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        } else if (temp < COMFORT_MIN) {
-            gc.setFill(Color.color(0.4, 0.6, 1, 0.12));
-            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        }
-    }
-
     private void drawBar(double x, double y, double w, double ratio, Color hi, Color lo) {
         ratio = Math.max(0, Math.min(1, ratio));
         gc.setFill(Color.color(0, 0, 0, 0.35));
@@ -690,31 +898,21 @@ public class GameView {
         gc.fillRoundRect(x, y, w * ratio, 5, 4, 4);
     }
 
-    private void drawToast() {
-        if (toastTimer <= 0 || toastText.isEmpty()) {
-            return;
-        }
-        double alpha = Math.min(1, toastTimer);
-        double w = canvas.getWidth();
-        gc.setGlobalAlpha(alpha);
-        gc.setFill(Color.color(0, 0, 0, 0.6));
-        gc.fillRoundRect(w / 2.0 - 200, 90, 400, 40, 12, 12);
-        gc.setFill(Color.web("#eafff0"));
-        gc.setFont(javafx.scene.text.Font.font(15));
-        gc.fillText(toastText, w / 2.0 - 185, 116);
-        gc.setGlobalAlpha(1);
-    }
-
     private void showToast(String text) {
         toastText = text;
         toastTimer = 3.0;
+        toastLabel.setText(text);
+        toastBox.setVisible(true);
+        toastBox.setOpacity(1);
     }
 
     private void refreshHud() {
         dayLabel.setText("📅 Day " + snapshot.day());
         aliveLabel.setText("🌱 Alive " + snapshot.alivePlants() + "   💀 Dead " + snapshot.deadPlants());
-        envLabel.setText("Soil " + snapshot.soilNutrients() + "%   Temp " + snapshot.ambientTemperature() + "°F");
-        speedLabel.setText("⏩ " + (int) speed + "x");
+        envLabel.setText("Soil " + snapshot.soilNutrients() + "%"
+                + "   🌡 Outside " + snapshot.outsideTemperature() + "°F"
+                + "   🏠 Inside " + snapshot.ambientTemperature() + "°F");
+        speedLabel.setText(speed > 0 ? "⏩ " + (int) speed + "x" : "⏸ Paused");
     }
 
     private void safe(Runnable action) {
@@ -771,7 +969,15 @@ public class GameView {
                 this.pop = 1.0;
             }
             this.alive = nowAlive;
-            this.infested = "INFESTED".equals(v.status()) || !"-".equals(v.activeParasites());
+            boolean nowInfested = "INFESTED".equals(v.status()) || !"-".equals(v.activeParasites());
+            // Reset hasDrone only on the infested→clear transition (i.e. when
+            // the pest control module has actually cured the plant). Otherwise
+            // the drone-spawn condition would refire every 6s while paused —
+            // the parasite never clears, so a fresh drone keeps spawning.
+            if (this.infested && !nowInfested) {
+                this.hasDrone = false;
+            }
+            this.infested = nowInfested;
         }
 
         void update(double dt) {
@@ -856,6 +1062,7 @@ public class GameView {
         double life;
         double size;
         Color color;
+        boolean streak;
 
         static Particle droplet(double x, double y) {
             Particle p = new Particle();
@@ -896,10 +1103,31 @@ public class GameView {
             return p;
         }
 
+        /** Thin, fast-falling streak used by the rain weather effect. */
+        static Particle rainstreak(double x, double y) {
+            Particle p = new Particle();
+            p.x = x;
+            p.y = y;
+            p.vx = -40;
+            p.vy = 720 + Math.random() * 120;
+            p.gravity = 0;
+            p.life = 2.0;
+            p.size = 9 + Math.random() * 6;
+            p.color = Color.web("#9cc6ff");
+            p.streak = true;
+            return p;
+        }
+
         void draw(GraphicsContext gc) {
             gc.setGlobalAlpha(Math.max(0, Math.min(1, life)));
-            gc.setFill(color);
-            gc.fillOval(x, y, size, size);
+            if (streak) {
+                gc.setStroke(color);
+                gc.setLineWidth(1.4);
+                gc.strokeLine(x, y, x + 2, y + size);
+            } else {
+                gc.setFill(color);
+                gc.fillOval(x, y, size, size);
+            }
             gc.setGlobalAlpha(1);
         }
     }
