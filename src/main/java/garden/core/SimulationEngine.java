@@ -209,6 +209,11 @@ public class SimulationEngine {
         return logger.recentEntries();
     }
 
+    /** Recent gardener-fired events only, immune to AUTO_TICK eviction pressure. */
+    public List<garden.logging.GardenLogger.LogEntry> getRecentUserLogEntries() {
+        return logger.recentUserEntries();
+    }
+
     private void runDailyUpdate(GardenEvent event) {
         for (GardenModule module : modules) {
             try {

@@ -176,16 +176,9 @@ public class GameView {
     }
 
     private void refreshRecentEvents() {
-        List<garden.logging.GardenLogger.LogEntry> all = engine.getRecentLogEntries();
-        // Only one row per user-fired event (the EVENT_RECEIVED header row),
-        // and skip AUTO_TICK rows from the autonomous animation timer so they
-        // don't drown out actual user clicks.
-        List<garden.logging.GardenLogger.LogEntry> userEvents = new ArrayList<>();
-        for (garden.logging.GardenLogger.LogEntry e : all) {
-            if ("EVENT_RECEIVED".equals(e.action()) && !"AUTO_TICK".equals(e.event())) {
-                userEvents.add(e);
-            }
-        }
+        // Dedicated user-event buffer in the logger — survives any amount of
+        // AUTO_TICK volume between gardener clicks.
+        List<garden.logging.GardenLogger.LogEntry> userEvents = engine.getRecentUserLogEntries();
         int total = userEvents.size();
         for (int i = 0; i < recentEventLabels.length; i++) {
             if (i < total) {
