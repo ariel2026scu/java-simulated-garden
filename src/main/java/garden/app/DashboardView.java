@@ -69,6 +69,8 @@ public class DashboardView {
     private final Label infestedValue = new Label();
     private final Label deadStatusValue = new Label();
     private final Label logPathValue = new Label();
+    private static final int RECENT_EVENTS_VISIBLE = 5;
+    private final Label[] recentEventLabels = new Label[RECENT_EVENTS_VISIBLE];
     private Runnable onStateChanged = () -> {};
 
     public DashboardView(SimulationEngine engine) {
@@ -111,6 +113,7 @@ public class DashboardView {
 
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
         renderGardenBoard(snapshot.plants());
+        refreshRecentEvents();
         try {
             logArea.setText(Files.readString(engine.getLogPath()));
             logArea.positionCaret(logArea.getLength());
@@ -328,10 +331,71 @@ public class DashboardView {
         logArea.setPrefRowCount(9);
         logArea.getStyleClass().add("log-area");
         Label header = sectionTitle("Event Log");
-        VBox box = new VBox(6, header, logArea);
+        VBox recentBox = buildRecentEventsPanel();
+        VBox box = new VBox(6, header, recentBox, logArea);
         box.getStyleClass().add("log-panel");
         VBox.setVgrow(logArea, Priority.ALWAYS);
         return box;
+    }
+
+    private VBox buildRecentEventsPanel() {
+        Label header = new Label("Recent user events");
+        header.setStyle("-fx-text-fill: #173b2e; -fx-font-size: 12px; -fx-font-weight: bold;");
+        VBox box = new VBox(2, header);
+        box.setStyle(
+                "-fx-background-color: #eef3ef;"
+                        + " -fx-padding: 8 12 8 12;"
+                        + " -fx-background-radius: 6;"
+                        + " -fx-border-color: #d7dfd9;"
+                        + " -fx-border-radius: 6;");
+        for (int i = 0; i < recentEventLabels.length; i++) {
+            Label l = new Label("—");
+            l.setStyle("-fx-text-fill: #2e3a32; -fx-font-size: 12px;");
+            recentEventLabels[i] = l;
+            box.getChildren().add(l);
+        }
+        return box;
+    }
+
+    private void refreshRecentEvents() {
+        List<garden.logging.GardenLogger.LogEntry> userEvents = engine.getRecentUserLogEntries();
+        int total = userEvents.size();
+        for (int i = 0; i < recentEventLabels.length; i++) {
+            if (i < total) {
+                garden.logging.GardenLogger.LogEntry e = userEvents.get(total - 1 - i);
+                recentEventLabels[i].setText(formatRecentEvent(e));
+            } else {
+                recentEventLabels[i].setText("—");
+            }
+        }
+    }
+
+    private static final int COMFORT_MIN = 55;
+    private static final int COMFORT_MAX = 95;
+
+    /** Translates a raw log row back to the button label the gardener clicked. */
+    private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
+        String label = switch (e.event()) {
+            case "RAIN" -> "🌧 Rain " + e.value() + "mm";
+            case "TEMPERATURE" -> {
+                int t = parseIntOr(e.value(), 72);
+                if (t > COMFORT_MAX) yield "🔥 Heat Wave " + t + "°F";
+                if (t < COMFORT_MIN) yield "❄ Cold Snap " + t + "°F";
+                yield "🌡 Temperature " + t + "°F";
+            }
+            case "PARASITE" -> "🐛 Pest Outbreak: " + e.value();
+            case "MANUAL_DAY" -> "📅 Advance Day";
+            default -> e.event() + " " + e.value();
+        };
+        return "Day " + e.day() + "  " + label;
+    }
+
+    private static int parseIntOr(String s, int fallback) {
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
     }
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {

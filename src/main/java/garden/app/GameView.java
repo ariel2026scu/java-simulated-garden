@@ -21,7 +21,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -100,9 +99,6 @@ public class GameView {
     private final Label envLabel = new Label();
     private final Label speedLabel = new Label();
 
-    private static final int RECENT_VISIBLE = 5;
-    private final Label[] recentEventLabels = new Label[RECENT_VISIBLE];
-
     private final Label toastLabel = new Label();
     private final HBox toastBox = new HBox(toastLabel);
 
@@ -126,14 +122,7 @@ public class GameView {
                         + " -fx-background-color: #0b2018;"
                         + " -fx-control-inner-background: #0b2018;");
 
-        // Sits OUTSIDE the ScrollPane so it stays anchored to the viewport
-        // while the canvas scrolls, mirroring what the gardener just wrote to
-        // log.txt without forcing a tab switch to the dashboard panel.
-        VBox recentEventsPanel = buildRecentEventsPanel();
-        StackPane.setAlignment(recentEventsPanel, Pos.TOP_RIGHT);
-        StackPane.setMargin(recentEventsPanel, new Insets(12, 12, 0, 0));
-
-        // Center-of-viewport toast — also outside the ScrollPane so it stays
+        // Center-of-viewport toast — outside the ScrollPane so it stays
         // visually centred no matter how far the gardener has scrolled. The
         // previous implementation painted directly into the canvas near the
         // climate-banner row, so a Heat Wave / Cold Snap toast overlapped
@@ -141,7 +130,7 @@ public class GameView {
         configureToastBox();
         StackPane.setAlignment(toastBox, Pos.CENTER);
 
-        StackPane center = new StackPane(scrollPane, recentEventsPanel, toastBox);
+        StackPane center = new StackPane(scrollPane, toastBox);
 
         root.setTop(buildHud());
         root.setCenter(center);
@@ -149,53 +138,9 @@ public class GameView {
         root.setStyle("-fx-background-color: #0c241a;");
 
         refreshHud();
-        refreshRecentEvents();
         startAnimation();
     }
 
-    private VBox buildRecentEventsPanel() {
-        Label header = new Label("📝 Recent events (log.txt)");
-        header.setStyle("-fx-text-fill: #a9d4ff; -fx-font-size: 11px; -fx-font-weight: bold;");
-        VBox box = new VBox(3, header);
-        box.setStyle(
-                "-fx-background-color: rgba(7, 21, 15, 0.82);"
-                        + " -fx-padding: 8 12 8 12;"
-                        + " -fx-background-radius: 8;"
-                        + " -fx-border-color: rgba(255,255,255,0.18);"
-                        + " -fx-border-radius: 8;");
-        box.setMinWidth(240);
-        box.setMaxWidth(280);
-        box.setMouseTransparent(true); // clicks pass through to the canvas underneath
-        for (int i = 0; i < recentEventLabels.length; i++) {
-            Label l = new Label("—");
-            l.setStyle("-fx-text-fill: #eafff0; -fx-font-size: 12px;");
-            recentEventLabels[i] = l;
-            box.getChildren().add(l);
-        }
-        return box;
-    }
-
-    private void refreshRecentEvents() {
-        // Dedicated user-event buffer in the logger — survives any amount of
-        // AUTO_TICK volume between gardener clicks.
-        List<garden.logging.GardenLogger.LogEntry> userEvents = engine.getRecentUserLogEntries();
-        int total = userEvents.size();
-        for (int i = 0; i < recentEventLabels.length; i++) {
-            if (i < total) {
-                // Newest first, so the most recent click is on top.
-                garden.logging.GardenLogger.LogEntry e = userEvents.get(total - 1 - i);
-                recentEventLabels[i].setText(formatRecentEvent(e));
-            } else {
-                recentEventLabels[i].setText("—");
-            }
-        }
-    }
-
-    /**
-     * Translates a log row's raw event/value back to the label the gardener
-     * actually clicked (Heat Wave, Cold Snap, Pest Outbreak, etc.), since
-     * "TEMPERATURE 110" doesn't intuitively map to the 🔥 Heat Wave button.
-     */
     private void configureToastBox() {
         toastLabel.setStyle(
                 "-fx-text-fill: #eafff0;"
@@ -209,30 +154,6 @@ public class GameView {
         toastBox.setMouseTransparent(true);
         toastBox.setVisible(false);
         toastBox.setOpacity(0);
-    }
-
-    private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
-        String label = switch (e.event()) {
-            case "RAIN" -> "🌧 Rain " + e.value() + "mm";
-            case "TEMPERATURE" -> {
-                int t = parseIntOr(e.value(), 72);
-                if (t > COMFORT_MAX) yield "🔥 Heat Wave " + t + "°F";
-                if (t < COMFORT_MIN) yield "❄ Cold Snap " + t + "°F";
-                yield "🌡 Temperature " + t + "°F";
-            }
-            case "PARASITE" -> "🐛 Pest Outbreak: " + e.value();
-            case "MANUAL_DAY" -> "📅 Advance Day";
-            default -> e.event() + " " + e.value();
-        };
-        return "Day " + e.day() + "  " + label;
-    }
-
-    private static int parseIntOr(String s, int fallback) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException ex) {
-            return fallback;
-        }
     }
 
     public Node getRoot() {
@@ -469,7 +390,6 @@ public class GameView {
             }
         }
         syncSprites();
-        refreshRecentEvents();
         if (snapshot.day() >= lastDayMilestone + 5) {
             lastDayMilestone = (snapshot.day() / 5) * 5;
             if (snapshot.alivePlants() > 0) {
