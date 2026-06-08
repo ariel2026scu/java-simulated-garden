@@ -21,6 +21,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -99,6 +100,9 @@ public class GameView {
     private final Label envLabel = new Label();
     private final Label speedLabel = new Label();
 
+    private static final int RECENT_VISIBLE = 5;
+    private final Label[] recentEventLabels = new Label[RECENT_VISIBLE];
+
     private AnimationTimer timer;
     private Runnable onStateChanged = () -> {};
 
@@ -119,13 +123,71 @@ public class GameView {
                         + " -fx-background-color: #0b2018;"
                         + " -fx-control-inner-background: #0b2018;");
 
+        // Sits OUTSIDE the ScrollPane so it stays anchored to the viewport
+        // while the canvas scrolls, mirroring what the gardener just wrote to
+        // log.txt without forcing a tab switch to the dashboard panel.
+        VBox recentEventsPanel = buildRecentEventsPanel();
+        StackPane.setAlignment(recentEventsPanel, Pos.TOP_RIGHT);
+        StackPane.setMargin(recentEventsPanel, new Insets(12, 12, 0, 0));
+        StackPane center = new StackPane(scrollPane, recentEventsPanel);
+
         root.setTop(buildHud());
-        root.setCenter(scrollPane);
+        root.setCenter(center);
         root.setBottom(buildToolbar());
         root.setStyle("-fx-background-color: #0c241a;");
 
         refreshHud();
+        refreshRecentEvents();
         startAnimation();
+    }
+
+    private VBox buildRecentEventsPanel() {
+        Label header = new Label("📝 Recent events (log.txt)");
+        header.setStyle("-fx-text-fill: #a9d4ff; -fx-font-size: 11px; -fx-font-weight: bold;");
+        VBox box = new VBox(3, header);
+        box.setStyle(
+                "-fx-background-color: rgba(7, 21, 15, 0.82);"
+                        + " -fx-padding: 8 12 8 12;"
+                        + " -fx-background-radius: 8;"
+                        + " -fx-border-color: rgba(255,255,255,0.18);"
+                        + " -fx-border-radius: 8;");
+        box.setMinWidth(240);
+        box.setMaxWidth(280);
+        box.setMouseTransparent(true); // clicks pass through to the canvas underneath
+        for (int i = 0; i < recentEventLabels.length; i++) {
+            Label l = new Label("—");
+            l.setStyle("-fx-text-fill: #eafff0; -fx-font-size: 11px; -fx-font-family: monospace;");
+            recentEventLabels[i] = l;
+            box.getChildren().add(l);
+        }
+        return box;
+    }
+
+    private void refreshRecentEvents() {
+        List<garden.logging.GardenLogger.LogEntry> all = engine.getRecentLogEntries();
+        // Only one row per user-fired event (the EVENT_RECEIVED header row),
+        // and skip AUTO_TICK rows from the autonomous animation timer so they
+        // don't drown out actual user clicks.
+        List<garden.logging.GardenLogger.LogEntry> userEvents = new ArrayList<>();
+        for (garden.logging.GardenLogger.LogEntry e : all) {
+            if ("EVENT_RECEIVED".equals(e.action()) && !"AUTO_TICK".equals(e.event())) {
+                userEvents.add(e);
+            }
+        }
+        int total = userEvents.size();
+        for (int i = 0; i < recentEventLabels.length; i++) {
+            if (i < total) {
+                // Newest first, so the most recent click is on top.
+                garden.logging.GardenLogger.LogEntry e = userEvents.get(total - 1 - i);
+                recentEventLabels[i].setText(formatRecentEvent(e));
+            } else {
+                recentEventLabels[i].setText("—");
+            }
+        }
+    }
+
+    private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
+        return String.format("Day %d  %-11s %s", e.day(), e.event(), e.value());
     }
 
     public Node getRoot() {
@@ -356,6 +418,7 @@ public class GameView {
             }
         }
         syncSprites();
+        refreshRecentEvents();
         if (snapshot.day() >= lastDayMilestone + 5) {
             lastDayMilestone = (snapshot.day() / 5) * 5;
             if (snapshot.alivePlants() > 0) {

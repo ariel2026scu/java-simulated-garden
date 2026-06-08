@@ -204,6 +204,11 @@ public class SimulationEngine {
         return logger.getLogPath();
     }
 
+    /** Recent log rows (most recent last), for in-canvas log strips. */
+    public List<garden.logging.GardenLogger.LogEntry> getRecentLogEntries() {
+        return logger.recentEntries();
+    }
+
     private void runDailyUpdate(GardenEvent event) {
         for (GardenModule module : modules) {
             try {
