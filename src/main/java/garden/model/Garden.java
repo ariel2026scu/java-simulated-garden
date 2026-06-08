@@ -12,12 +12,14 @@ public class Garden {
     private int soilNutrients = 75;
     private int ambientTemperature = 72;
     private int lastObservedTemperature = 72;
+    private int lastEventRawTemperature = 72;
 
     public void clear() {
         plants.clear();
         soilNutrients = 75;
         ambientTemperature = 72;
         lastObservedTemperature = 72;
+        lastEventRawTemperature = 72;
     }
 
     public void addPlant(Plant plant) {
@@ -70,5 +72,20 @@ public class Garden {
 
     public void setLastObservedTemperature(int lastObservedTemperature) {
         this.lastObservedTemperature = lastObservedTemperature;
+    }
+
+    /**
+     * The most recent outside (un-conditioned) temperature requested via a
+     * temperature event, before the climate control system softened it. Paired
+     * with {@link #getLastObservedTemperature()} this lets the UI distinguish
+     * "this is what the weather threw at us" from "this is what the greenhouse
+     * actually exposed the plants to today".
+     */
+    public int getLastEventRawTemperature() {
+        return lastEventRawTemperature;
+    }
+
+    public void setLastEventRawTemperature(int lastEventRawTemperature) {
+        this.lastEventRawTemperature = lastEventRawTemperature;
     }
 }

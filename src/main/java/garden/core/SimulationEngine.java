@@ -139,6 +139,7 @@ public class SimulationEngine {
                 // by the end-of-day update and would otherwise hide every
                 // temperature event from the UI.
                 garden.getLastObservedTemperature(),
+                garden.getLastEventRawTemperature(),
                 plantViews
         );
     }

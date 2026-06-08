@@ -30,6 +30,10 @@ public class TemperatureControlSystem implements GardenModule {
             // without this the dashboard / game HUD would always read 72°F a
             // moment after the user fires a temperature event.
             garden.setLastObservedTemperature(adjustedTemperature);
+            // Also keep the raw value so the UI can show "outside temp" vs
+            // "inside temp" separately and the gardener can see how much the
+            // greenhouse climate control actually mitigated.
+            garden.setLastEventRawTemperature(rawTemperature);
             context.log(event.name(), event.value(), getName(), "CLIMATE_RESPONSE", garden,
                     "Outside temperature " + rawTemperature + "F adjusted to " + adjustedTemperature + "F.");
         }

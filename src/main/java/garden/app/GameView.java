@@ -501,7 +501,8 @@ public class GameView {
         double h = canvas.getHeight();
         double fade = Math.min(1, weatherEffectTimer);
         double pulse = 0.5 + 0.5 * Math.sin(weatherEffectTimer * 8);
-        int temp = snapshot.ambientTemperature();
+        int outside = snapshot.outsideTemperature();
+        int inside = snapshot.ambientTemperature();
         switch (weatherEffect) {
             case RAIN -> {
                 // Slight blue desaturation so the raindrops read against bright
@@ -527,8 +528,8 @@ public class GameView {
                     double cx = i * slice + slice / 2;
                     gc.fillText("SHADE", cx - 14, 36);
                 }
-                drawWeatherBanner("🔥 HEAT WAVE — Cooling shade panels deployed ("
-                        + temp + "°F)", 56);
+                drawWeatherBanner("🔥 HEAT WAVE — Outside " + outside + "°F → Inside "
+                        + inside + "°F (cooling shade deployed)", 56);
             }
             case COLD -> {
                 gc.setFill(Color.color(0.4, 0.65, 1.0, 0.22 * pulse * fade));
@@ -549,8 +550,8 @@ public class GameView {
                     double cx = (i + 0.5) * (w / 6.0);
                     gc.fillText("HEAT LAMP", cx - 24, 64);
                 }
-                drawWeatherBanner("❄ COLD SNAP — Heat lamps engaged ("
-                        + temp + "°F)", 84);
+                drawWeatherBanner("❄ COLD SNAP — Outside " + outside + "°F → Inside "
+                        + inside + "°F (heat lamps engaged)", 84);
             }
             default -> {
             }
@@ -867,7 +868,9 @@ public class GameView {
     private void refreshHud() {
         dayLabel.setText("📅 Day " + snapshot.day());
         aliveLabel.setText("🌱 Alive " + snapshot.alivePlants() + "   💀 Dead " + snapshot.deadPlants());
-        envLabel.setText("Soil " + snapshot.soilNutrients() + "%   Temp " + snapshot.ambientTemperature() + "°F");
+        envLabel.setText("Soil " + snapshot.soilNutrients() + "%"
+                + "   🌡 Outside " + snapshot.outsideTemperature() + "°F"
+                + "   🏠 Inside " + snapshot.ambientTemperature() + "°F");
         speedLabel.setText(speed > 0 ? "⏩ " + (int) speed + "x" : "⏸ Paused");
     }
 

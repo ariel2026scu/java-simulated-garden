@@ -61,7 +61,8 @@ public class DashboardView {
     private final Label aliveValue = new Label();
     private final Label deadValue = new Label();
     private final Label soilValue = new Label();
-    private final Label temperatureValue = new Label();
+    private final Label outsideTempValue = new Label();
+    private final Label insideTempValue = new Label();
     private final Label healthyValue = new Label();
     private final Label recoveringValue = new Label();
     private final Label stressedValue = new Label();
@@ -96,7 +97,8 @@ public class DashboardView {
         aliveValue.setText(Integer.toString(snapshot.alivePlants()));
         deadValue.setText(Integer.toString(snapshot.deadPlants()));
         soilValue.setText(snapshot.soilNutrients() + "%");
-        temperatureValue.setText(snapshot.ambientTemperature() + "F");
+        outsideTempValue.setText(snapshot.outsideTemperature() + "°F");
+        insideTempValue.setText(snapshot.ambientTemperature() + "°F");
         logPathValue.setText(engine.getLogPath().toAbsolutePath().toString());
 
         Map<String, Long> statusCounts = snapshot.plants().stream()
@@ -131,7 +133,8 @@ public class DashboardView {
                 metric("Alive", aliveValue),
                 metric("Dead", deadValue),
                 metric("Soil", soilValue),
-                metric("Temperature", temperatureValue)
+                metric("Outside", outsideTempValue),
+                metric("Inside", insideTempValue)
         );
         metrics.setAlignment(Pos.CENTER_LEFT);
 
