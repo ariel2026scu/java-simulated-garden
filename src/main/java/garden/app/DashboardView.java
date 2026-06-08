@@ -245,7 +245,7 @@ public class DashboardView {
     }
 
     /**
-     * Compact 8×4 lawn-tile view in the centre slot. Smaller cells than before
+     * Compact 8×5 lawn-tile view in the centre slot. Smaller cells than before
      * (60×56 vs the old 88×86) so the board takes a modest centre stripe and
      * lets Plant Details + Event Log share the bottom row.
      */
@@ -260,9 +260,9 @@ public class DashboardView {
             constraints.setHgrow(Priority.ALWAYS);
             gardenBoard.getColumnConstraints().add(constraints);
         }
-        for (int row = 0; row < 4; row++) {
+        for (int row = 0; row < 5; row++) {
             RowConstraints constraints = new RowConstraints();
-            constraints.setPercentHeight(25);
+            constraints.setPercentHeight(20);
             constraints.setVgrow(Priority.ALWAYS);
             gardenBoard.getRowConstraints().add(constraints);
         }
@@ -276,7 +276,7 @@ public class DashboardView {
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
         gardenBoard.getChildren().clear();
-        int totalCells = 4 * 8;
+        int totalCells = 5 * 8;
         for (int index = 0; index < totalCells; index++) {
             StackPane tile = new StackPane();
             tile.getStyleClass().add("lawn-tile");
@@ -290,20 +290,16 @@ public class DashboardView {
     }
 
     private VBox plantTile(GardenSnapshot.PlantView plant) {
-        boolean dead = "DEAD".equals(plant.status());
         Circle icon = new Circle(12);
         icon.getStyleClass().addAll("plant-icon", plant.type().toLowerCase());
 
         Label name = new Label(shortName(plant.name()));
         name.getStyleClass().add("tile-name");
 
-        // Per user request: just show alive vs dead, no health bar. The "dead"
-        // CSS class already greys + dims the whole tile, and the inline tag
-        // makes the binary state unmistakable at a glance.
-        Label aliveTag = new Label(dead ? "✗ dead" : "✓ alive");
-        aliveTag.getStyleClass().add("tile-status");
-
-        VBox tileContent = new VBox(2, icon, name, aliveTag);
+        // No status text — alive vs dead is conveyed entirely by the tile's
+        // CSS class (.plant-tile-content.dead dims to 0.62 opacity + greys
+        // the background; living tiles keep their normal colour).
+        VBox tileContent = new VBox(2, icon, name);
         tileContent.getStyleClass().addAll("plant-tile-content", plant.status().toLowerCase());
         tileContent.setAlignment(Pos.CENTER);
         return tileContent;
