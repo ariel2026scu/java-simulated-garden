@@ -26,14 +26,10 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.RowConstraints;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.shape.Circle;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -54,7 +50,6 @@ import java.util.stream.Collectors;
 public class DashboardView {
     private final SimulationEngine engine;
     private final BorderPane root = new BorderPane();
-    private final GridPane gardenBoard = new GridPane();
     private final TableView<GardenSnapshot.PlantView> plantTable = new TableView<>();
     private final TextArea logArea = new TextArea();
     private final Label dayValue = new Label();
@@ -78,7 +73,10 @@ public class DashboardView {
         root.getStyleClass().add("root-pane");
         root.setTop(buildHeader());
         root.setLeft(buildControls());
-        root.setCenter(buildGardenBoard());
+        // The Plant Details table moves to the spacious centre slot — the
+        // old 8×5 "lawn tiles" garden board is dropped here because the
+        // game tab already renders the same visual garden far more vividly.
+        root.setCenter(buildPlantDetailsPanel());
         root.setRight(buildStatusPanel());
         root.setBottom(buildLogPanel());
         refresh();
@@ -112,7 +110,6 @@ public class DashboardView {
         deadStatusValue.setText(count(statusCounts, "DEAD"));
 
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
-        renderGardenBoard(snapshot.plants());
         refreshRecentEvents();
         try {
             logArea.setText(Files.readString(engine.getLogPath()));
@@ -240,43 +237,20 @@ public class DashboardView {
         return controls;
     }
 
-    private VBox buildGardenBoard() {
-        gardenBoard.getStyleClass().add("garden-board");
-        gardenBoard.setHgap(8);
-        gardenBoard.setVgap(8);
-        gardenBoard.setPadding(new Insets(12));
-        for (int column = 0; column < 8; column++) {
-            ColumnConstraints constraints = new ColumnConstraints();
-            constraints.setPercentWidth(12.5);
-            constraints.setHgrow(Priority.ALWAYS);
-            gardenBoard.getColumnConstraints().add(constraints);
-        }
-        for (int row = 0; row < 5; row++) {
-            RowConstraints constraints = new RowConstraints();
-            constraints.setPercentHeight(20);
-            constraints.setVgrow(Priority.ALWAYS);
-            gardenBoard.getRowConstraints().add(constraints);
-        }
-
-        VBox board = new VBox(8, sectionTitle("Garden Defense Board"), gardenBoard);
-        board.getStyleClass().add("board-panel");
-        VBox.setVgrow(gardenBoard, Priority.ALWAYS);
-        BorderPane.setMargin(board, new Insets(12));
-        return board;
-    }
-
     private TableView<GardenSnapshot.PlantView> buildPlantTable() {
+        // "Type" column dropped — every plant's name is "<Type>-<n>" (Rose-1,
+        // Tomato-3, ...), so showing both is duplicate noise. The Plant column
+        // already carries the variety.
         TableColumn<GardenSnapshot.PlantView, String> name = textColumn("Plant", GardenSnapshot.PlantView::name, 140);
-        TableColumn<GardenSnapshot.PlantView, String> type = textColumn("Type", GardenSnapshot.PlantView::type, 110);
-        TableColumn<GardenSnapshot.PlantView, Number> health = intColumn("Health", GardenSnapshot.PlantView::health, 145);
+        TableColumn<GardenSnapshot.PlantView, Number> health = intColumn("Health", GardenSnapshot.PlantView::health, 160);
         health.setCellFactory(column -> progressCell(100));
-        TableColumn<GardenSnapshot.PlantView, Number> water = intColumn("Water", GardenSnapshot.PlantView::waterLevel, 130);
+        TableColumn<GardenSnapshot.PlantView, Number> water = intColumn("Water", GardenSnapshot.PlantView::waterLevel, 150);
         water.setCellFactory(column -> progressCell(45));
-        TableColumn<GardenSnapshot.PlantView, String> status = textColumn("Status", GardenSnapshot.PlantView::status, 115);
-        TableColumn<GardenSnapshot.PlantView, String> parasites = textColumn("Parasites", GardenSnapshot.PlantView::activeParasites, 150);
-        TableColumn<GardenSnapshot.PlantView, String> deathReason = textColumn("Death Reason", GardenSnapshot.PlantView::deathReason, 220);
+        TableColumn<GardenSnapshot.PlantView, String> status = textColumn("Status", GardenSnapshot.PlantView::status, 120);
+        TableColumn<GardenSnapshot.PlantView, String> parasites = textColumn("Parasites", GardenSnapshot.PlantView::activeParasites, 160);
+        TableColumn<GardenSnapshot.PlantView, String> deathReason = textColumn("Death Reason", GardenSnapshot.PlantView::deathReason, 260);
 
-        plantTable.getColumns().setAll(List.of(name, type, health, water, status, parasites, deathReason));
+        plantTable.getColumns().setAll(List.of(name, health, water, status, parasites, deathReason));
         plantTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         plantTable.setRowFactory(table -> new TableRow<>() {
             @Override
@@ -301,9 +275,17 @@ public class DashboardView {
         return plantTable;
     }
 
-    private VBox buildStatusPanel() {
+    /** Plant Details table hosted in the dashboard's centre slot so it gets the full inner width. */
+    private VBox buildPlantDetailsPanel() {
         buildPlantTable();
-        plantTable.setPrefHeight(330);
+        VBox panel = new VBox(8, sectionTitle("Plant Details"), plantTable);
+        panel.getStyleClass().add("board-panel");
+        VBox.setVgrow(plantTable, Priority.ALWAYS);
+        BorderPane.setMargin(panel, new Insets(12));
+        return panel;
+    }
+
+    private VBox buildStatusPanel() {
         VBox panel = new VBox(10,
                 sectionTitle("Plant Status"),
                 statusRow("Healthy", healthyValue),
@@ -312,15 +294,12 @@ public class DashboardView {
                 statusRow("Infested", infestedValue),
                 statusRow("Dead", deadStatusValue),
                 new Separator(),
-                sectionTitle("Plant Details"),
-                plantTable,
-                new Separator(),
                 sectionTitle("Log File"),
                 logPathValue
         );
         panel.getStyleClass().add("side-panel");
-        panel.setPrefWidth(360);
-        panel.setMinWidth(320);
+        panel.setPrefWidth(230);
+        panel.setMinWidth(210);
         logPathValue.getStyleClass().add("path-label");
         logPathValue.setWrapText(true);
         return panel;
@@ -399,59 +378,6 @@ public class DashboardView {
         }
     }
 
-    private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
-        gardenBoard.getChildren().clear();
-        int totalCells = 5 * 8;
-        for (int index = 0; index < totalCells; index++) {
-            StackPane tile = new StackPane();
-            tile.getStyleClass().add("lawn-tile");
-            tile.setMinSize(88, 86);
-            tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-            if (index < plants.size()) {
-                tile.getChildren().add(plantTile(plants.get(index)));
-            }
-            gardenBoard.add(tile, index % 8, index / 8);
-        }
-    }
-
-    private VBox plantTile(GardenSnapshot.PlantView plant) {
-        Circle icon = new Circle(18);
-        icon.getStyleClass().addAll("plant-icon", plant.type().toLowerCase());
-
-        Label name = new Label(shortName(plant.name()));
-        name.getStyleClass().add("tile-name");
-
-        ProgressBar health = new ProgressBar(Math.max(0, plant.health()) / 100.0);
-        health.getStyleClass().add("tile-health");
-        health.setMaxWidth(Double.MAX_VALUE);
-
-        Label status = new Label(statusLabel(plant));
-        status.getStyleClass().add("tile-status");
-
-        VBox tileContent = new VBox(4, icon, name, health, status);
-        tileContent.getStyleClass().addAll("plant-tile-content", plant.status().toLowerCase());
-        tileContent.setAlignment(Pos.CENTER);
-        return tileContent;
-    }
-
-    private String shortName(String name) {
-        int dash = name.indexOf('-');
-        return dash > 0 ? name.substring(0, dash) : name;
-    }
-
-    private String statusLabel(GardenSnapshot.PlantView plant) {
-        if (!"-".equals(plant.activeParasites())) {
-            return plant.activeParasites();
-        }
-        return switch (plant.status()) {
-            case "HEALTHY" -> "ready";
-            case "RECOVERING" -> "recovering";
-            case "STRESSED" -> "stressed";
-            case "INFESTED" -> "infested";
-            case "DEAD" -> "dead";
-            default -> plant.status().toLowerCase();
-        };
-    }
 
     private HBox metric(String label, Label value) {
         Label name = new Label(label);
