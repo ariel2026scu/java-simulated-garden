@@ -26,10 +26,15 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.control.SplitPane;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.RowConstraints;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Circle;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -50,6 +55,7 @@ import java.util.stream.Collectors;
 public class DashboardView {
     private final SimulationEngine engine;
     private final BorderPane root = new BorderPane();
+    private final GridPane gardenBoard = new GridPane();
     private final TableView<GardenSnapshot.PlantView> plantTable = new TableView<>();
     private final TextArea logArea = new TextArea();
     private final Label dayValue = new Label();
@@ -73,12 +79,12 @@ public class DashboardView {
         root.getStyleClass().add("root-pane");
         root.setTop(buildHeader());
         root.setLeft(buildControls());
-        // The Plant Details table moves to the spacious centre slot — the
-        // old 8×5 "lawn tiles" garden board is dropped here because the
-        // game tab already renders the same visual garden far more vividly.
-        root.setCenter(buildPlantDetailsPanel());
+        // Compact Garden Defense Board in the centre, with Plant Details and
+        // Event Log sharing the full-width bottom in a draggable horizontal
+        // split — Plant Details on the left, Event Log on the right.
+        root.setCenter(buildGardenBoard());
         root.setRight(buildStatusPanel());
-        root.setBottom(buildLogPanel());
+        root.setBottom(buildBottomSplit());
         refresh();
     }
 
@@ -110,6 +116,7 @@ public class DashboardView {
         deadStatusValue.setText(count(statusCounts, "DEAD"));
 
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
+        renderGardenBoard(snapshot.plants());
         refreshRecentEvents();
         try {
             logArea.setText(Files.readString(engine.getLogPath()));
@@ -237,6 +244,74 @@ public class DashboardView {
         return controls;
     }
 
+    /**
+     * Compact 8×4 lawn-tile view in the centre slot. Smaller cells than before
+     * (60×56 vs the old 88×86) so the board takes a modest centre stripe and
+     * lets Plant Details + Event Log share the bottom row.
+     */
+    private VBox buildGardenBoard() {
+        gardenBoard.getStyleClass().add("garden-board");
+        gardenBoard.setHgap(6);
+        gardenBoard.setVgap(6);
+        gardenBoard.setPadding(new Insets(8));
+        for (int column = 0; column < 8; column++) {
+            ColumnConstraints constraints = new ColumnConstraints();
+            constraints.setPercentWidth(12.5);
+            constraints.setHgrow(Priority.ALWAYS);
+            gardenBoard.getColumnConstraints().add(constraints);
+        }
+        for (int row = 0; row < 4; row++) {
+            RowConstraints constraints = new RowConstraints();
+            constraints.setPercentHeight(25);
+            constraints.setVgrow(Priority.ALWAYS);
+            gardenBoard.getRowConstraints().add(constraints);
+        }
+
+        VBox board = new VBox(6, sectionTitle("Garden Defense Board"), gardenBoard);
+        board.getStyleClass().add("board-panel");
+        VBox.setVgrow(gardenBoard, Priority.ALWAYS);
+        BorderPane.setMargin(board, new Insets(8, 8, 8, 8));
+        return board;
+    }
+
+    private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
+        gardenBoard.getChildren().clear();
+        int totalCells = 4 * 8;
+        for (int index = 0; index < totalCells; index++) {
+            StackPane tile = new StackPane();
+            tile.getStyleClass().add("lawn-tile");
+            tile.setMinSize(60, 56);
+            tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+            if (index < plants.size()) {
+                tile.getChildren().add(plantTile(plants.get(index)));
+            }
+            gardenBoard.add(tile, index % 8, index / 8);
+        }
+    }
+
+    private VBox plantTile(GardenSnapshot.PlantView plant) {
+        Circle icon = new Circle(12);
+        icon.getStyleClass().addAll("plant-icon", plant.type().toLowerCase());
+
+        Label name = new Label(shortName(plant.name()));
+        name.getStyleClass().add("tile-name");
+
+        ProgressBar health = new ProgressBar(Math.max(0, plant.health()) / 100.0);
+        health.getStyleClass().add("tile-health");
+        health.setMaxWidth(Double.MAX_VALUE);
+        health.setPrefHeight(6);
+
+        VBox tileContent = new VBox(2, icon, name, health);
+        tileContent.getStyleClass().addAll("plant-tile-content", plant.status().toLowerCase());
+        tileContent.setAlignment(Pos.CENTER);
+        return tileContent;
+    }
+
+    private String shortName(String name) {
+        int dash = name.indexOf('-');
+        return dash > 0 ? name.substring(0, dash) : name;
+    }
+
     private TableView<GardenSnapshot.PlantView> buildPlantTable() {
         // "Type" column dropped — every plant's name is "<Type>-<n>" (Rose-1,
         // Tomato-3, ...), so showing both is duplicate noise. The Plant column
@@ -275,14 +350,22 @@ public class DashboardView {
         return plantTable;
     }
 
-    /** Plant Details table hosted in the dashboard's centre slot so it gets the full inner width. */
+    /** Plant Details table — hosted in the left half of the bottom SplitPane. */
     private VBox buildPlantDetailsPanel() {
         buildPlantTable();
         VBox panel = new VBox(8, sectionTitle("Plant Details"), plantTable);
-        panel.getStyleClass().add("board-panel");
+        panel.getStyleClass().add("log-panel");
         VBox.setVgrow(plantTable, Priority.ALWAYS);
-        BorderPane.setMargin(panel, new Insets(12));
         return panel;
+    }
+
+    /** Bottom row: Plant Details on the left, Event Log on the right, draggable divider. */
+    private SplitPane buildBottomSplit() {
+        SplitPane split = new SplitPane(buildPlantDetailsPanel(), buildLogPanel());
+        split.setDividerPositions(0.55);
+        split.setPrefHeight(360);
+        BorderPane.setMargin(split, new Insets(8, 8, 8, 8));
+        return split;
     }
 
     private VBox buildStatusPanel() {
