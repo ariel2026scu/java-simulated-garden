@@ -67,6 +67,18 @@ public class GameView {
     // to read the log and compose an event before the next day rolls over.
     private static final double SECONDS_PER_DAY = 8.0;
 
+    /**
+     * Every parasite defined across PlantType + the generic "insects" entry
+     * that PestControlSystem maps to each plant's own vulnerabilities. The
+     * game-tab Pest Outbreak button picks uniformly from this pool, fully
+     * independent of whatever the dashboard's parasite dropdown is set to.
+     */
+    private static final String[] PEST_POOL = {
+            "insects",
+            "aphid", "beetle", "cutworm", "hornworm", "mealybug",
+            "mite", "moth", "scale", "slug", "spider_mite", "thrip", "whitefly"
+    };
+
     private final SimulationEngine engine;
     private final Random random = new Random();
 
@@ -205,8 +217,13 @@ public class GameView {
         cold.setOnAction(e -> throwEvent(new TemperatureEvent(40), "Cold snap incoming!"));
         Button pest = btn("🐛 Pest Outbreak");
         pest.setOnAction(e -> {
-            String[] pool = {"aphid", "beetle", "mite", "slug", "hornworm", "whitefly"};
-            throwEvent(new ParasiteEvent(pool[random.nextInt(pool.length)]), "Pests invaded the garden!");
+            // Random — independent from whatever the dashboard's parasite
+            // ComboBox happens to be set to. Includes the generic "insects"
+            // entry, which the PestControlSystem maps to per-plant
+            // vulnerabilities (i.e. every plant catches its own pest).
+            String picked = PEST_POOL[random.nextInt(PEST_POOL.length)];
+            String displayLabel = "insects".equals(picked) ? "all parasites" : picked;
+            throwEvent(new ParasiteEvent(picked), "🐛 Pest outbreak: " + displayLabel);
         });
         Button logState = btn("📋 Log State");
         logState.setTooltip(new Tooltip(

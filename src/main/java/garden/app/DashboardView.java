@@ -383,7 +383,8 @@ public class DashboardView {
                 if (t < COMFORT_MIN) yield "❄ Cold Snap " + t + "°F";
                 yield "🌡 Temperature " + t + "°F";
             }
-            case "PARASITE" -> "🐛 Pest Outbreak: " + e.value();
+            case "PARASITE" -> "🐛 Pest Outbreak: "
+                    + ("insects".equals(e.value()) ? "all parasites" : e.value());
             case "MANUAL_DAY" -> "📅 Advance Day";
             default -> e.event() + " " + e.value();
         };
