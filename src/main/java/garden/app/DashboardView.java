@@ -430,33 +430,22 @@ public class DashboardView {
         }
     }
 
-    private static final int COMFORT_MIN = 55;
-    private static final int COMFORT_MAX = 95;
-
     /** Translates a raw log row back to the button label the gardener clicked. */
     private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
         String label = switch (e.event()) {
             case "RAIN" -> "🌧 Rain " + e.value() + "mm";
-            case "TEMPERATURE" -> {
-                int t = parseIntOr(e.value(), 72);
-                if (t > COMFORT_MAX) yield "🔥 Heat Wave " + t + "°F";
-                if (t < COMFORT_MIN) yield "❄ Cold Snap " + t + "°F";
-                yield "🌡 Temperature " + t + "°F";
-            }
+            // TemperatureEvent classifies its own EVENT name by value, so the
+            // log already says HEAT_WAVE / COLD_SNAP / TEMPERATURE — no need
+            // to re-derive the band from the value column here.
+            case "HEAT_WAVE" -> "🔥 Heat Wave " + e.value() + "°F";
+            case "COLD_SNAP" -> "❄ Cold Snap " + e.value() + "°F";
+            case "TEMPERATURE" -> "🌡 Temperature " + e.value() + "°F";
             case "PARASITE" -> "🐛 Pest Outbreak: "
                     + ("insects".equals(e.value()) ? "all parasites" : e.value());
             case "MANUAL_DAY" -> "📅 Advance Day";
             default -> e.event() + " " + e.value();
         };
         return "Day " + e.day() + "  " + label;
-    }
-
-    private static int parseIntOr(String s, int fallback) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException ex) {
-            return fallback;
-        }
     }
 
 
