@@ -290,18 +290,20 @@ public class DashboardView {
     }
 
     private VBox plantTile(GardenSnapshot.PlantView plant) {
+        boolean dead = "DEAD".equals(plant.status());
         Circle icon = new Circle(12);
         icon.getStyleClass().addAll("plant-icon", plant.type().toLowerCase());
 
         Label name = new Label(shortName(plant.name()));
         name.getStyleClass().add("tile-name");
 
-        ProgressBar health = new ProgressBar(Math.max(0, plant.health()) / 100.0);
-        health.getStyleClass().add("tile-health");
-        health.setMaxWidth(Double.MAX_VALUE);
-        health.setPrefHeight(6);
+        // Per user request: just show alive vs dead, no health bar. The "dead"
+        // CSS class already greys + dims the whole tile, and the inline tag
+        // makes the binary state unmistakable at a glance.
+        Label aliveTag = new Label(dead ? "✗ dead" : "✓ alive");
+        aliveTag.getStyleClass().add("tile-status");
 
-        VBox tileContent = new VBox(2, icon, name, health);
+        VBox tileContent = new VBox(2, icon, name, aliveTag);
         tileContent.getStyleClass().addAll("plant-tile-content", plant.status().toLowerCase());
         tileContent.setAlignment(Pos.CENTER);
         return tileContent;
