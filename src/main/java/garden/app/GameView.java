@@ -436,13 +436,12 @@ public class GameView {
         for (Drone d : drones) {
             d.update(dt, particles, random);
         }
-        drones.removeIf(d -> {
-            if (d.finished()) {
-                d.target.hasDrone = false;
-                return true;
-            }
-            return false;
-        });
+        // hasDrone is intentionally NOT cleared here — it now represents
+        // "this infestation cycle has already received a drone visit", and
+        // is cleared in PlantSprite.apply() once the plant is actually cured.
+        // That stops the spawn loop while paused, where the parasite never
+        // ages out and the drone would otherwise time out and respawn forever.
+        drones.removeIf(Drone::finished);
     }
 
     private void updateParticles(double dt) {
@@ -928,7 +927,15 @@ public class GameView {
                 this.pop = 1.0;
             }
             this.alive = nowAlive;
-            this.infested = "INFESTED".equals(v.status()) || !"-".equals(v.activeParasites());
+            boolean nowInfested = "INFESTED".equals(v.status()) || !"-".equals(v.activeParasites());
+            // Reset hasDrone only on the infested→clear transition (i.e. when
+            // the pest control module has actually cured the plant). Otherwise
+            // the drone-spawn condition would refire every 6s while paused —
+            // the parasite never clears, so a fresh drone keeps spawning.
+            if (this.infested && !nowInfested) {
+                this.hasDrone = false;
+            }
+            this.infested = nowInfested;
         }
 
         void update(double dt) {
