@@ -156,7 +156,7 @@ public class GameView {
         box.setMouseTransparent(true); // clicks pass through to the canvas underneath
         for (int i = 0; i < recentEventLabels.length; i++) {
             Label l = new Label("—");
-            l.setStyle("-fx-text-fill: #eafff0; -fx-font-size: 11px; -fx-font-family: monospace;");
+            l.setStyle("-fx-text-fill: #eafff0; -fx-font-size: 12px;");
             recentEventLabels[i] = l;
             box.getChildren().add(l);
         }
@@ -186,8 +186,33 @@ public class GameView {
         }
     }
 
+    /**
+     * Translates a log row's raw event/value back to the label the gardener
+     * actually clicked (Heat Wave, Cold Snap, Pest Outbreak, etc.), since
+     * "TEMPERATURE 110" doesn't intuitively map to the 🔥 Heat Wave button.
+     */
     private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
-        return String.format("Day %d  %-11s %s", e.day(), e.event(), e.value());
+        String label = switch (e.event()) {
+            case "RAIN" -> "🌧 Rain " + e.value() + "mm";
+            case "TEMPERATURE" -> {
+                int t = parseIntOr(e.value(), 72);
+                if (t > COMFORT_MAX) yield "🔥 Heat Wave " + t + "°F";
+                if (t < COMFORT_MIN) yield "❄ Cold Snap " + t + "°F";
+                yield "🌡 Temperature " + t + "°F";
+            }
+            case "PARASITE" -> "🐛 Pest Outbreak: " + e.value();
+            case "MANUAL_DAY" -> "📅 Advance Day";
+            default -> e.event() + " " + e.value();
+        };
+        return "Day " + e.day() + "  " + label;
+    }
+
+    private static int parseIntOr(String s, int fallback) {
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
     }
 
     public Node getRoot() {
