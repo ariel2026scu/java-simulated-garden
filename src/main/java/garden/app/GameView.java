@@ -103,6 +103,9 @@ public class GameView {
     private static final int RECENT_VISIBLE = 5;
     private final Label[] recentEventLabels = new Label[RECENT_VISIBLE];
 
+    private final Label toastLabel = new Label();
+    private final HBox toastBox = new HBox(toastLabel);
+
     private AnimationTimer timer;
     private Runnable onStateChanged = () -> {};
 
@@ -129,7 +132,16 @@ public class GameView {
         VBox recentEventsPanel = buildRecentEventsPanel();
         StackPane.setAlignment(recentEventsPanel, Pos.TOP_RIGHT);
         StackPane.setMargin(recentEventsPanel, new Insets(12, 12, 0, 0));
-        StackPane center = new StackPane(scrollPane, recentEventsPanel);
+
+        // Center-of-viewport toast — also outside the ScrollPane so it stays
+        // visually centred no matter how far the gardener has scrolled. The
+        // previous implementation painted directly into the canvas near the
+        // climate-banner row, so a Heat Wave / Cold Snap toast overlapped
+        // the "🔥 HEAT WAVE — Outside X°F → Inside Y°F" banner.
+        configureToastBox();
+        StackPane.setAlignment(toastBox, Pos.CENTER);
+
+        StackPane center = new StackPane(scrollPane, recentEventsPanel, toastBox);
 
         root.setTop(buildHud());
         root.setCenter(center);
@@ -191,6 +203,24 @@ public class GameView {
      * actually clicked (Heat Wave, Cold Snap, Pest Outbreak, etc.), since
      * "TEMPERATURE 110" doesn't intuitively map to the 🔥 Heat Wave button.
      */
+    private void configureToastBox() {
+        toastLabel.setStyle(
+                "-fx-text-fill: #eafff0;"
+                        + " -fx-font-size: 17px;"
+                        + " -fx-font-weight: bold;");
+        toastBox.setAlignment(Pos.CENTER);
+        toastBox.setStyle(
+                "-fx-background-color: rgba(0,0,0,0.72);"
+                        + " -fx-padding: 14 26 14 26;"
+                        + " -fx-background-radius: 16;"
+                        + " -fx-border-color: rgba(255,255,255,0.25);"
+                        + " -fx-border-radius: 16;");
+        toastBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        toastBox.setMouseTransparent(true);
+        toastBox.setVisible(false);
+        toastBox.setOpacity(0);
+    }
+
     private String formatRecentEvent(garden.logging.GardenLogger.LogEntry e) {
         String label = switch (e.event()) {
             case "RAIN" -> "🌧 Rain " + e.value() + "mm";
@@ -403,6 +433,12 @@ public class GameView {
 
         if (toastTimer > 0) {
             toastTimer -= dt;
+            if (toastTimer <= 0) {
+                toastBox.setVisible(false);
+                toastBox.setOpacity(0);
+            } else {
+                toastBox.setOpacity(Math.min(1, toastTimer));
+            }
         }
         refreshHud();
     }
@@ -569,7 +605,10 @@ public class GameView {
         // timer below, so a temperature event reads as a dramatic 3-second
         // wave instead of an immortal overlay glued to the canvas.
         drawWeatherEffect();
-        drawToast();
+        // Toast is no longer painted on the canvas — it's a centered viewport
+        // overlay (see configureToastBox + StackPane in the constructor) so it
+        // stays in the middle of the visible area as the canvas scrolls and
+        // never overlaps the heat-wave / cold-snap banner row.
     }
 
     /**
@@ -932,24 +971,12 @@ public class GameView {
         gc.fillRoundRect(x, y, w * ratio, 5, 4, 4);
     }
 
-    private void drawToast() {
-        if (toastTimer <= 0 || toastText.isEmpty()) {
-            return;
-        }
-        double alpha = Math.min(1, toastTimer);
-        double w = canvas.getWidth();
-        gc.setGlobalAlpha(alpha);
-        gc.setFill(Color.color(0, 0, 0, 0.6));
-        gc.fillRoundRect(w / 2.0 - 200, 90, 400, 40, 12, 12);
-        gc.setFill(Color.web("#eafff0"));
-        gc.setFont(javafx.scene.text.Font.font(15));
-        gc.fillText(toastText, w / 2.0 - 185, 116);
-        gc.setGlobalAlpha(1);
-    }
-
     private void showToast(String text) {
         toastText = text;
         toastTimer = 3.0;
+        toastLabel.setText(text);
+        toastBox.setVisible(true);
+        toastBox.setOpacity(1);
     }
 
     private void refreshHud() {
