@@ -5,7 +5,10 @@ import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
+
+import java.io.InputStream;
 
 /**
  * Main JavaFX entry point. Hosts a single {@link SimulationEngine} that is
@@ -51,8 +54,28 @@ public class GardenShell extends Application {
         stage.setMinWidth(1080);
         stage.setMinHeight(720);
         stage.setOnCloseRequest(e -> gameView.stopAnimation());
+        applyWindowIcons(stage);
         stage.setScene(scene);
         stage.show();
+    }
+
+    /**
+     * Loads every available size from {@code /icons/icon_*.png} into the
+     * stage's icon list. JavaFX (and the host OS) picks the size that best
+     * matches each context — title bar, taskbar, macOS Dock, etc.
+     */
+    private void applyWindowIcons(Stage stage) {
+        int[] sizes = {16, 32, 48, 64, 128, 256, 512};
+        for (int size : sizes) {
+            String path = "/icons/icon_" + size + ".png";
+            try (InputStream in = getClass().getResourceAsStream(path)) {
+                if (in != null) {
+                    stage.getIcons().add(new Image(in));
+                }
+            } catch (Exception ex) {
+                System.err.println("[GardenShell] could not load " + path + ": " + ex);
+            }
+        }
     }
 
     public static void main(String[] args) {
