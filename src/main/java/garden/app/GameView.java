@@ -206,15 +206,12 @@ public class GameView {
     private void configureToastBox() {
         toastLabel.setStyle(
                 "-fx-text-fill: #eafff0;"
-                        + " -fx-font-size: 17px;"
-                        + " -fx-font-weight: bold;");
+                        + " -fx-font-size: 13px;");
         toastBox.setAlignment(Pos.CENTER);
         toastBox.setStyle(
-                "-fx-background-color: rgba(0,0,0,0.72);"
-                        + " -fx-padding: 14 26 14 26;"
-                        + " -fx-background-radius: 16;"
-                        + " -fx-border-color: rgba(255,255,255,0.25);"
-                        + " -fx-border-radius: 16;");
+                "-fx-background-color: rgba(0,0,0,0.45);"
+                        + " -fx-padding: 6 14 6 14;"
+                        + " -fx-background-radius: 10;");
         toastBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         toastBox.setMouseTransparent(true);
         toastBox.setVisible(false);
