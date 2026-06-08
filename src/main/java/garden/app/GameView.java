@@ -61,7 +61,11 @@ public class GameView {
     private static final int COMFORT_MAX = 95;
     private static final int SOIL_LOW = 45;
 
-    private static final double SECONDS_PER_DAY = 3.5;
+    // Real seconds per simulated day at 1x speed. At the prior value of 3.5s
+    // every minute produced ~17 days, each writing ~11 log lines, which buried
+    // user-fired events in autonomous-tick noise. 8s gives the gardener time
+    // to read the log and compose an event before the next day rolls over.
+    private static final double SECONDS_PER_DAY = 8.0;
 
     private final SimulationEngine engine;
     private final Random random = new Random();
@@ -77,6 +81,7 @@ public class GameView {
     private long lastNanos = 0;
     private double dayAccumulator = 0;
     private double speed = 1.0;
+    private double speedBeforePause = 1.0;
     private double worldTime = 0;
 
     private int lastDayMilestone = 0;
@@ -188,17 +193,37 @@ public class GameView {
 
         Label spd = new Label("Speed:");
         style(spd, "#9fd4ad", 13, false);
+        Button pauseBtn = btn("⏸ Pause");
+        pauseBtn.setOnAction(e -> {
+            if (speed > 0) {
+                speedBeforePause = speed;
+                speed = 0;
+                pauseBtn.setText("▶ Resume");
+            } else {
+                speed = speedBeforePause > 0 ? speedBeforePause : 1.0;
+                pauseBtn.setText("⏸ Pause");
+            }
+        });
         Button s1 = btn("1x");
-        s1.setOnAction(e -> speed = 1.0);
+        s1.setOnAction(e -> {
+            speed = 1.0;
+            pauseBtn.setText("⏸ Pause");
+        });
         Button s5 = btn("5x");
-        s5.setOnAction(e -> speed = 5.0);
+        s5.setOnAction(e -> {
+            speed = 5.0;
+            pauseBtn.setText("⏸ Pause");
+        });
         Button s20 = btn("20x");
-        s20.setOnAction(e -> speed = 20.0);
+        s20.setOnAction(e -> {
+            speed = 20.0;
+            pauseBtn.setText("⏸ Pause");
+        });
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox bar = new HBox(10, gardener, rain, heat, cold, pest, logState, spacer, spd, s1, s5, s20);
+        HBox bar = new HBox(10, gardener, rain, heat, cold, pest, logState, spacer, spd, pauseBtn, s1, s5, s20);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(10, 20, 12, 20));
         bar.setStyle("-fx-background-color: #07150f;");
@@ -803,7 +828,7 @@ public class GameView {
         dayLabel.setText("📅 Day " + snapshot.day());
         aliveLabel.setText("🌱 Alive " + snapshot.alivePlants() + "   💀 Dead " + snapshot.deadPlants());
         envLabel.setText("Soil " + snapshot.soilNutrients() + "%   Temp " + snapshot.ambientTemperature() + "°F");
-        speedLabel.setText("⏩ " + (int) speed + "x");
+        speedLabel.setText(speed > 0 ? "⏩ " + (int) speed + "x" : "⏸ Paused");
     }
 
     private void safe(Runnable action) {
