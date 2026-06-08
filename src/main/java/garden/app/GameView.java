@@ -299,7 +299,10 @@ public class GameView {
         dayAccumulator += dt * speed;
         while (dayAccumulator >= SECONDS_PER_DAY) {
             dayAccumulator -= SECONDS_PER_DAY;
-            safe(engine::advanceOneDay);
+            // Auto-advances log as AUTO_TICK so they don't drown out the
+            // gardener's explicit RAIN / TEMPERATURE / PARASITE / MANUAL_DAY
+            // events when scrolling log.txt.
+            safe(engine::tickAutonomous);
             refreshSnapshot();
         }
 

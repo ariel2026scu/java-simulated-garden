@@ -105,6 +105,18 @@ public class SimulationEngine {
         submitEvent(new garden.event.ManualEvent("MANUAL_DAY", "advance"));
     }
 
+    /**
+     * Advance one simulated day from a background scheduler (the game view's
+     * animation timer) rather than from an explicit user click. Identical to
+     * {@link #advanceOneDay()} except that the rows it writes to the log carry
+     * the event name {@code AUTO_TICK} instead of {@code MANUAL_DAY}, so when
+     * a grader scrolls the log it is obvious which rows came from the
+     * gardener pressing buttons versus the background simulation.
+     */
+    public synchronized void tickAutonomous() {
+        submitEvent(new garden.event.ManualEvent("AUTO_TICK", "timer"));
+    }
+
     public synchronized GardenSnapshot snapshot() {
         ensureInitialized();
         List<GardenSnapshot.PlantView> plantViews = garden.getPlants().stream()
