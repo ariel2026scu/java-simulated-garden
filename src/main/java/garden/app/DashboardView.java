@@ -6,6 +6,7 @@ import garden.event.RainEvent;
 import garden.event.TemperatureEvent;
 import garden.model.GardenSnapshot;
 import garden.model.PlantType;
+import javafx.animation.PauseTransition;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -17,8 +18,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
@@ -31,10 +34,11 @@ import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
+import javafx.util.Duration;
+import javafx.util.StringConverter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -53,9 +57,11 @@ import java.util.stream.Collectors;
  * action, so the animated game tab stays in sync.
  */
 public class DashboardView {
+    private static final int BOARD_COLUMNS = 8;
     private final SimulationEngine engine;
     private final BorderPane root = new BorderPane();
     private final GridPane gardenBoard = new GridPane();
+    private final ScrollPane boardScroll = new ScrollPane();
     private final TableView<GardenSnapshot.PlantView> plantTable = new TableView<>();
     private final TextArea logArea = new TextArea();
     private final Label dayValue = new Label();
@@ -187,28 +193,6 @@ public class DashboardView {
         events.addRow(4, new Label("Parasite"), parasiteField);
         events.add(pestButton, 0, 5, 2, 1);
 
-        Button nextDay = secondaryButton("Advance Day");
-        nextDay.setOnAction(event -> {
-            engine.advanceOneDay();
-            notifyChanged();
-        });
-
-        Button stateButton = secondaryButton("Log State");
-        stateButton.setTooltip(new Tooltip(
-                "Writes a STATE summary row + one row per plant to log.txt.\n"
-                        + "The new lines appear at the bottom of the Event Log panel\n"
-                        + "below — this is the snapshot a grader will see in the file."));
-        stateButton.setOnAction(event -> {
-            engine.logCurrentState();
-            notifyChanged();
-        });
-
-        Button resetButton = secondaryButton("Reset Garden");
-        resetButton.setOnAction(event -> {
-            engine.initialize();
-            notifyChanged();
-        });
-
         ComboBox<String> plantTypeCombo = new ComboBox<>(
                 FXCollections.observableArrayList(Arrays.stream(PlantType.values())
                         .map(PlantType::getDisplayName)
@@ -229,11 +213,6 @@ public class DashboardView {
                 sectionTitle("Events"),
                 events,
                 new Separator(),
-                sectionTitle("Garden"),
-                nextDay,
-                stateButton,
-                resetButton,
-                new Separator(),
                 sectionTitle("Planting"),
                 plantTypeCombo,
                 addPlantButton
@@ -245,52 +224,51 @@ public class DashboardView {
     }
 
     /**
-     * Compact 8×5 lawn-tile view in the centre slot. Smaller cells than before
-     * (60×56 vs the old 88×86) so the board takes a modest centre stripe and
-     * lets Plant Details + Event Log share the bottom row.
+     * Compact lawn-tile view in the centre slot. Fixed 8-column grid whose row
+     * count grows with the plant population; the grid lives in a vertical
+     * {@link ScrollPane} so any number of plants stays reachable without
+     * shrinking the cells. Cells are smaller than before (44×42) so the board
+     * keeps a modest footprint and lets Plant Details + Event Log own a taller
+     * bottom row.
      */
     private VBox buildGardenBoard() {
         gardenBoard.getStyleClass().add("garden-board");
         gardenBoard.setHgap(6);
         gardenBoard.setVgap(6);
         gardenBoard.setPadding(new Insets(8));
-        for (int column = 0; column < 8; column++) {
+        for (int column = 0; column < BOARD_COLUMNS; column++) {
             ColumnConstraints constraints = new ColumnConstraints();
-            constraints.setPercentWidth(12.5);
+            constraints.setPercentWidth(100.0 / BOARD_COLUMNS);
             constraints.setHgrow(Priority.ALWAYS);
             gardenBoard.getColumnConstraints().add(constraints);
         }
-        for (int row = 0; row < 5; row++) {
-            RowConstraints constraints = new RowConstraints();
-            constraints.setPercentHeight(20);
-            constraints.setVgrow(Priority.ALWAYS);
-            gardenBoard.getRowConstraints().add(constraints);
-        }
 
-        VBox board = new VBox(6, sectionTitle("Garden Defense Board"), gardenBoard);
+        boardScroll.setContent(gardenBoard);
+        boardScroll.setFitToWidth(true);
+        boardScroll.getStyleClass().add("board-scroll");
+        boardScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        VBox board = new VBox(6, sectionTitle("Garden Defense Board"), boardScroll);
         board.getStyleClass().add("board-panel");
-        VBox.setVgrow(gardenBoard, Priority.ALWAYS);
+        VBox.setVgrow(boardScroll, Priority.ALWAYS);
         BorderPane.setMargin(board, new Insets(8, 8, 8, 8));
         return board;
     }
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
         gardenBoard.getChildren().clear();
-        int totalCells = 5 * 8;
-        for (int index = 0; index < totalCells; index++) {
+        for (int index = 0; index < plants.size(); index++) {
             StackPane tile = new StackPane();
             tile.getStyleClass().add("lawn-tile");
-            tile.setMinSize(60, 56);
+            tile.setMinSize(44, 42);
             tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-            if (index < plants.size()) {
-                tile.getChildren().add(plantTile(plants.get(index)));
-            }
-            gardenBoard.add(tile, index % 8, index / 8);
+            tile.getChildren().add(plantTile(plants.get(index)));
+            gardenBoard.add(tile, index % BOARD_COLUMNS, index / BOARD_COLUMNS);
         }
     }
 
     private VBox plantTile(GardenSnapshot.PlantView plant) {
-        Circle icon = new Circle(12);
+        Circle icon = new Circle(10);
         icon.getStyleClass().addAll("plant-icon", plant.type().toLowerCase());
 
         Label name = new Label(shortName(plant.name()));
@@ -361,13 +339,42 @@ public class DashboardView {
     private SplitPane buildBottomSplit() {
         SplitPane split = new SplitPane(buildPlantDetailsPanel(), buildLogPanel());
         split.setDividerPositions(0.55);
-        split.setPrefHeight(360);
+        split.setPrefHeight(460);
+        split.setMinHeight(420);
         BorderPane.setMargin(split, new Insets(8, 8, 8, 8));
         return split;
     }
 
     private VBox buildStatusPanel() {
+        Button nextDay = secondaryButton("Advance Day");
+        nextDay.setOnAction(event -> {
+            engine.advanceOneDay();
+            notifyChanged();
+        });
+
+        Button stateButton = secondaryButton("Log State");
+        stateButton.setTooltip(new Tooltip(
+                "Writes a STATE summary row + one row per plant to log.txt.\n"
+                        + "The new lines appear at the bottom of the Event Log panel\n"
+                        + "below — this is the snapshot a grader will see in the file."));
+        stateButton.setOnAction(event -> {
+            engine.logCurrentState();
+            notifyChanged();
+            flashLogged(stateButton);
+        });
+
+        Button resetButton = secondaryButton("Reset Garden");
+        resetButton.setOnAction(event -> {
+            engine.initialize();
+            notifyChanged();
+        });
+
         VBox panel = new VBox(10,
+                sectionTitle("Garden"),
+                nextDay,
+                stateButton,
+                resetButton,
+                new Separator(),
                 sectionTitle("Plant Status"),
                 statusRow("Healthy", healthyValue),
                 statusRow("Recovering", recoveringValue),
@@ -386,9 +393,21 @@ public class DashboardView {
         return panel;
     }
 
+    /**
+     * Briefly swaps the Log State button label to "✓ Logged" for visible
+     * confirmation that a snapshot was written, then restores it. The button
+     * stays clickable throughout; rapid clicks just restart the timer.
+     */
+    private void flashLogged(Button button) {
+        button.setText("✓ Logged");
+        PauseTransition pause = new PauseTransition(Duration.seconds(1.2));
+        pause.setOnFinished(e -> button.setText("Log State"));
+        pause.play();
+    }
+
     private VBox buildLogPanel() {
         logArea.setEditable(false);
-        logArea.setPrefRowCount(9);
+        logArea.setPrefRowCount(13);
         logArea.getStyleClass().add("log-area");
         Label header = sectionTitle("Event Log");
         VBox recentBox = buildRecentEventsPanel();
@@ -501,6 +520,36 @@ public class DashboardView {
     private Spinner<Integer> editableSpinner(int min, int max, int initial) {
         Spinner<Integer> spinner = new Spinner<>(min, max, initial);
         spinner.setEditable(true);
+
+        // Editable spinners null out their backing value when the editor holds
+        // blank or unparseable text; the next arrow click then NPEs inside
+        // SpinnerValueFactory.increment()/decrement(). A converter that always
+        // falls back to the last good value (or the min) keeps getValue()
+        // non-null no matter what the user types or clears.
+        SpinnerValueFactory.IntegerSpinnerValueFactory factory =
+                (SpinnerValueFactory.IntegerSpinnerValueFactory) spinner.getValueFactory();
+        factory.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(Integer value) {
+                return Integer.toString(value == null ? min : value);
+            }
+
+            @Override
+            public Integer fromString(String text) {
+                Integer current = factory.getValue();
+                Integer fallback = current == null ? min : current;
+                if (text == null || text.isBlank()) {
+                    return fallback;
+                }
+                try {
+                    int parsed = Integer.parseInt(text.trim());
+                    return Math.max(min, Math.min(max, parsed));
+                } catch (NumberFormatException ex) {
+                    return fallback;
+                }
+            }
+        });
+
         spinner.getEditor().focusedProperty().addListener((obs, was, isNow) -> {
             if (!isNow) {
                 try {
