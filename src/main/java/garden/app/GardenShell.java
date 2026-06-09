@@ -61,22 +61,40 @@ public class GardenShell extends Application {
     }
 
     /**
-     * JavaFX-side: loads every size from {@code /icons/icon_*.png} into the
-     * stage's icon list, used for the window title bar and Cmd-Tab / Alt-Tab
-     * thumbnails.
+     * Candidate icon sizes we probe under {@code /icons/icon_<size>.png}.
+     * Missing entries are silently skipped, so the resource set can grow or
+     * shrink without code changes. Covers the common JavaFX / macOS / iOS /
+     * Windows tiers so any reasonable icon bundle drops in cleanly.
+     */
+    private static final int[] CANDIDATE_SIZES = {
+            16, 20, 24, 29, 32, 40, 48, 64, 72, 96,
+            128, 152, 167, 180, 192, 256, 512, 1024
+    };
+
+    /** Dock / taskbar floor — anything smaller looks fuzzy on a Retina Dock. */
+    private static final int DOCK_MIN_ACCEPTABLE = 128;
+
+    /**
+     * JavaFX-side: probes every {@link #CANDIDATE_SIZES} entry and adds
+     * whichever PNGs actually exist on the classpath to the stage's icon
+     * list. JavaFX / the OS pick the closest size at render time, so it's
+     * fine — and desirable — to include both tiny (title bar) and large
+     * (Cmd-Tab thumbnail) variants in the same list.
      */
     private void applyWindowIcons(Stage stage) {
-        int[] sizes = {16, 32, 48, 64, 128, 256, 512};
-        for (int size : sizes) {
+        int loaded = 0;
+        for (int size : CANDIDATE_SIZES) {
             String path = "/icons/icon_" + size + ".png";
             try (InputStream in = getClass().getResourceAsStream(path)) {
                 if (in != null) {
                     stage.getIcons().add(new Image(in));
+                    loaded++;
                 }
             } catch (Exception ex) {
                 System.err.println("[GardenShell] could not load " + path + ": " + ex);
             }
         }
+        System.err.println("[GardenShell] window icons loaded: " + loaded);
     }
 
     /**
@@ -85,9 +103,15 @@ public class GardenShell extends Application {
      * {@link java.awt.Taskbar} API. Without this call the Dock keeps showing
      * the default Java coffee-cup even after the stage icons are set.
      *
+     * <p>Picks the largest available PNG from {@link #CANDIDATE_SIZES} that
+     * is at least {@link #DOCK_MIN_ACCEPTABLE} pixels, so we never set the
+     * Dock to a fuzzy 16/32-pixel image just because that's all we found.
+     * If nothing sufficiently large exists we leave the Dock alone (system
+     * default) rather than degrading the look.
+     *
      * <p>Tolerant of platforms that don't expose the feature: missing
      * Taskbar support, missing ICON_IMAGE feature, or any I/O error during
-     * load all degrade silently to "no Dock icon" rather than crashing.
+     * load all degrade silently rather than crashing.
      */
     private void applyDockIcon() {
         try {
@@ -98,15 +122,27 @@ public class GardenShell extends Application {
             if (!taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
                 return;
             }
-            try (InputStream in = getClass().getResourceAsStream("/icons/icon_512.png")) {
-                if (in == null) {
-                    return;
+            for (int i = CANDIDATE_SIZES.length - 1; i >= 0; i--) {
+                int size = CANDIDATE_SIZES[i];
+                if (size < DOCK_MIN_ACCEPTABLE) {
+                    break;
                 }
-                java.awt.Image awtImage = javax.imageio.ImageIO.read(in);
-                if (awtImage != null) {
-                    taskbar.setIconImage(awtImage);
+                String path = "/icons/icon_" + size + ".png";
+                try (InputStream in = getClass().getResourceAsStream(path)) {
+                    if (in == null) {
+                        continue;
+                    }
+                    java.awt.Image awtImage = javax.imageio.ImageIO.read(in);
+                    if (awtImage != null) {
+                        taskbar.setIconImage(awtImage);
+                        System.err.println("[GardenShell] Dock icon set from " + path);
+                        return;
+                    }
                 }
             }
+            System.err.println("[GardenShell] no Dock-quality icon (>="
+                    + DOCK_MIN_ACCEPTABLE + "px) found under /icons/; "
+                    + "Dock will use system default.");
         } catch (Exception ex) {
             System.err.println("[GardenShell] could not set Dock icon: " + ex);
         }
