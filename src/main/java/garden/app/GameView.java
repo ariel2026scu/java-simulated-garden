@@ -68,16 +68,12 @@ public class GameView {
     private static final double SECONDS_PER_DAY = 8.0;
 
     /**
-     * Every parasite defined across PlantType + the generic "insects" entry
-     * that PestControlSystem maps to each plant's own vulnerabilities. The
-     * game-tab Pest Outbreak button picks uniformly from this pool, fully
-     * independent of whatever the dashboard's parasite dropdown is set to.
+     * Always-present entry in the random pest pool. {@code "insects"} is
+     * special-cased by the PestControlSystem to map onto each plant's own
+     * vulnerabilities, so it never fizzles regardless of which varieties
+     * happen to be alive in the current garden.
      */
-    private static final String[] PEST_POOL = {
-            "insects",
-            "aphid", "beetle", "cutworm", "hornworm", "mealybug",
-            "mite", "moth", "scale", "slug", "spider_mite", "thrip", "whitefly"
-    };
+    private static final String GENERIC_PEST = "insects";
 
     private final SimulationEngine engine;
     private final Random random = new Random();
@@ -217,12 +213,14 @@ public class GameView {
         cold.setOnAction(e -> throwEvent(new TemperatureEvent(40), "Cold snap incoming!"));
         Button pest = btn("🐛 Pest Outbreak");
         pest.setOnAction(e -> {
-            // Random — independent from whatever the dashboard's parasite
-            // ComboBox happens to be set to. Includes the generic "insects"
-            // entry, which the PestControlSystem maps to per-plant
-            // vulnerabilities (i.e. every plant catches its own pest).
-            String picked = PEST_POOL[random.nextInt(PEST_POOL.length)];
-            String displayLabel = "insects".equals(picked) ? "all parasites" : picked;
+            // Build the pool from what's actually alive right now: the union
+            // of vulnerabilities across living plants, plus the generic
+            // "insects" entry. If the gardener planted only Roses + Tomatoes
+            // we must never pick a hornworm-only pest like "moth" — it would
+            // silently do nothing and look broken.
+            List<String> pool = effectivePestPool();
+            String picked = pool.get(random.nextInt(pool.size()));
+            String displayLabel = GENERIC_PEST.equals(picked) ? "all parasites" : picked;
             throwEvent(new ParasiteEvent(picked), "🐛 Pest outbreak: " + displayLabel);
         });
         Button logState = btn("📋 Log State");
@@ -896,6 +894,35 @@ public class GameView {
         gc.fillRoundRect(x - 1, y - 1, w + 2, 7, 4, 4);
         gc.setFill(ratio > 0.4 ? hi : lo);
         gc.fillRoundRect(x, y, w * ratio, 5, 4, 4);
+    }
+
+    /**
+     * Pest pool for the random Pest Outbreak button. Built from the union of
+     * parasites that currently-alive plants are vulnerable to, plus the
+     * generic {@link #GENERIC_PEST}. The setup screen lets the gardener plant
+     * any subset of varieties, so the pool has to be recomputed at click time
+     * — a baked-in 13-name list would otherwise pick pests no living plant is
+     * vulnerable to and the event would silently fizzle.
+     *
+     * <p>Falls back to {@code [GENERIC_PEST]} on an empty garden so the button
+     * stays functional even before any plant is added.
+     */
+    private List<String> effectivePestPool() {
+        java.util.LinkedHashSet<String> pool = new java.util.LinkedHashSet<>();
+        pool.add(GENERIC_PEST);
+        for (GardenSnapshot.PlantView v : snapshot.plants()) {
+            if ("DEAD".equals(v.status())) {
+                continue;
+            }
+            try {
+                PlantType t = PlantType.fromName(v.type());
+                pool.addAll(t.getParasites());
+            } catch (RuntimeException ignored) {
+                // Snapshot rows reference plant types directly, so this
+                // branch should be dead — but tolerate the row if it isn't.
+            }
+        }
+        return new ArrayList<>(pool);
     }
 
     private void showToast(String text) {
