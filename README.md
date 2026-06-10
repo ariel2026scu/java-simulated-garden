@@ -6,8 +6,9 @@ project can also be tested through `GardenSimulationAPI` without launching JavaF
 
 ## Main Features
 
-- JavaFX dashboard with plant table, event controls, and live log viewer.
-- Game-style JavaFX garden board with animated plant rendering.
+- Single JavaFX window (`GardenShell`) with two tabs over one shared engine:
+  an animated **Living Garden** board and an **Admin Dashboard** with plant
+  table, event controls, and a live log viewer.
 - Standalone `GardenSimulationAPI` for instructor automation scripts.
 - Modular backend with watering, temperature control, pest control, and fertilizer systems.
 - Config-driven garden setup from `garden_config.json`.
