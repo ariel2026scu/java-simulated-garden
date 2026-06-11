@@ -192,39 +192,38 @@ public class HelpView {
     }
 
     /**
-     * Reads the given project-relative doc and shows its text in a modal
-     * in-app viewer window. Rendering in-app (rather than handing the file to
-     * the OS default Markdown app, which on some systems just launches the
-     * editor without loading the file) guarantees the user actually sees the
-     * content. Degrades to an error message in the same window if the file
-     * cannot be read.
+     * Reads the given project-relative doc and shows it, <b>rendered as
+     * Markdown</b>, in an in-app viewer window. Rendering in-app (rather than
+     * handing the file to the OS default Markdown app, which on some systems
+     * just launches the editor without loading the file) guarantees the user
+     * actually sees the formatted content. Degrades to a plain-text message in
+     * the same window if the file cannot be read.
      */
     private void showDoc(String label, String relativePath) {
-        String text;
+        Node content;
         try {
-            text = Files.readString(new File(relativePath).toPath());
+            String md = Files.readString(new File(relativePath).toPath());
+            content = SimpleMarkdownView.render(md);
         } catch (Exception ex) {
-            text = "Could not read " + relativePath + ":\n" + ex;
+            TextArea area = new TextArea("Could not read " + relativePath + ":\n" + ex);
+            area.setEditable(false);
+            content = area;
         }
+        VBox.setVgrow(content, Priority.ALWAYS);
 
-        TextArea area = new TextArea(text);
-        area.setEditable(false);
-        area.setWrapText(true);
-        area.setStyle("-fx-font-family: 'monospace'; -fx-font-size: 13px;");
-
-        Button close = new Button("Close");
         Stage viewer = new Stage();
+        Button close = new Button("Close");
         close.setOnAction(e -> viewer.close());
         HBox footer = new HBox(close);
         footer.setAlignment(Pos.CENTER_RIGHT);
         footer.setPadding(new Insets(8, 12, 12, 12));
 
-        VBox box = new VBox(area, footer);
-        VBox.setVgrow(area, Priority.ALWAYS);
+        VBox box = new VBox(content, footer);
+        box.setStyle("-fx-background-color: #fdfdfb;");
 
         viewer.initModality(Modality.NONE);
         viewer.setTitle(label + " — " + relativePath);
-        viewer.setScene(new Scene(box, 820, 640));
+        viewer.setScene(new Scene(box, 840, 680));
         viewer.show();
     }
 }
