@@ -34,6 +34,9 @@ import java.util.Map;
  *     <li><b>Admin Dashboard</b> — {@link DashboardView}, a control-and-tables
  *         view for setting precise event values, adding plants, and reading
  *         {@code log.txt} live.</li>
+ *     <li><b>Help</b> — {@link HelpView}, a static usage guide explaining that
+ *         the watering/temperature/pest/fertilizer systems run automatically,
+ *         with buttons to open the bundled Markdown docs.</li>
  * </ul>
  * Both views observe the same engine, and any change made in one tab is
  * reflected in the other through cross-refresh callbacks.
@@ -156,7 +159,10 @@ public class GardenShell extends Application {
         Tab dashboardTab = new Tab("📋 Admin Dashboard", dashboardView.getRoot());
         dashboardTab.setClosable(false);
 
-        TabPane tabs = new TabPane(gameTab, dashboardTab);
+        Tab helpTab = new Tab("❓ Help", new HelpView().getRoot());
+        helpTab.setClosable(false);
+
+        TabPane tabs = new TabPane(gameTab, dashboardTab, helpTab);
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
         Scene scene = new Scene(tabs, 1280, 820);
