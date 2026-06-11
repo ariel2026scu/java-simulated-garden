@@ -53,13 +53,40 @@ vulnerabilities so the event has a realistic effect.
 
 ## Run
 
-With Maven installed:
+The app needs **JDK 17+** (JavaFX 21 requires it) and is launched through the
+JavaFX Maven plugin — `javafx:run` sets up the JavaFX module path for you. Do
+**not** run `GardenShell.main()` directly (green ▶ arrow / `java garden.app.GardenShell`),
+or the JDK reports *"JavaFX runtime components are missing"*.
+
+### From the terminal
 
 ```bash
+# If your default JDK is older than 17, point JAVA_HOME at a 17+ JDK:
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn javafx:run
+
+# If `java -version` is already 17+, just:
+mvn javafx:run
 ```
 
-Core API compilation check without JavaFX:
+### From IntelliJ IDEA
+
+1. **Set the project JDK to 17+** — *File → Project Structure → Project → SDK*.
+   If you don't have one, *Add SDK → Download JDK* and pick a 17 (or newer) build.
+2. **Open the Maven tool window** — *View → Tool Windows → Maven* (or the Maven
+   tab on the right edge).
+3. Expand **java-simulated-garden → Plugins → javafx** and **double-click
+   `javafx:run`**. The garden window opens.
+
+To make it one click next time, right-click `javafx:run` → *Create
+'java-simulated-garden \[javafx:run]'…* to save a Maven run configuration, then
+use the run dropdown in the toolbar. (You can also just type `javafx:run` into
+the run configuration's *Command line* field.)
+
+> If IntelliJ shows the *"JavaFX runtime components are missing"* error, you ran
+> the `GardenShell` class directly instead of the `javafx:run` Maven goal — use
+> the Maven goal as above.
+
+### Core API compilation check without JavaFX
 
 ```bash
 javac -d /tmp/garden-classes $(find src/main/java -path 'src/main/java/garden/app' -prune -o -name '*.java' -print)
