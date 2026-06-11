@@ -118,7 +118,11 @@ public class DashboardView {
 
         SplitPane body = new SplitPane(topRow, buildBottomSplit());
         body.setOrientation(Orientation.VERTICAL);
-        body.setDividerPositions(0.5);
+        // Give the top row most of the height at startup so the right-hand
+        // status panel shows its full stack (down to the Open Log File button)
+        // without the bottom Plant Details / Event Log strip crowding it out.
+        // The divider is still draggable if the operator wants a taller bottom.
+        body.setDividerPositions(0.62);
 
         root.setCenter(body);
         refresh();
