@@ -37,6 +37,7 @@ import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
@@ -82,6 +83,8 @@ public class DashboardView {
     private static final int RECENT_EVENTS_VISIBLE = 5;
     private final Label[] recentEventLabels = new Label[RECENT_EVENTS_VISIBLE];
     private Runnable onStateChanged = () -> {};
+    /** Name of the plant highlighted on the board / selected in the table, or null. */
+    private String selectedPlantName;
 
     public DashboardView(SimulationEngine engine) {
         this.engine = engine;
@@ -96,8 +99,12 @@ public class DashboardView {
         //    Details / Event Log strip, for adjustable heights — keeping the
         //    details + log spanning the whole bottom rather than flanked by
         //    the side panels.
-        VBox controls = buildControls();
-        VBox status = buildStatusPanel();
+        // Wrap the side panels in ScrollPanes: it lets the top row shrink
+        // vertically (so the vertical divider below can be dragged to give the
+        // bottom strip more height) and keeps tall control stacks reachable on
+        // a short window.
+        ScrollPane controls = sidePanelScroll(buildControls());
+        ScrollPane status = sidePanelScroll(buildStatusPanel());
         SplitPane topRow = new SplitPane(controls, buildGardenBoard(), status);
         topRow.setOrientation(Orientation.HORIZONTAL);
         topRow.setDividerPositions(0.18, 0.82);
@@ -141,8 +148,20 @@ public class DashboardView {
         infestedValue.setText(count(statusCounts, "INFESTED"));
         deadStatusValue.setText(count(statusCounts, "DEAD"));
 
+        // setItems clears the table selection (and thus selectedPlantName via
+        // the listener), so remember it and re-select by name afterward to keep
+        // the board highlight stable across refreshes.
+        String keepSelection = selectedPlantName;
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
         renderGardenBoard(snapshot.plants());
+        if (keepSelection != null) {
+            for (GardenSnapshot.PlantView pv : plantTable.getItems()) {
+                if (keepSelection.equals(pv.name())) {
+                    plantTable.getSelectionModel().select(pv);
+                    break;
+                }
+            }
+        }
         refreshRecentEvents();
         try {
             logArea.setText(Files.readString(engine.getLogPath()));
@@ -157,11 +176,22 @@ public class DashboardView {
         onStateChanged.run();
     }
 
-    private VBox buildHeader() {
+    /** Wraps a side panel so it scrolls vertically and keeps its width. */
+    private ScrollPane sidePanelScroll(Region panel) {
+        ScrollPane scroll = new ScrollPane(panel);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setMinWidth(210);
+        scroll.setPrefWidth(232);
+        scroll.setStyle("-fx-background-color: transparent;");
+        return scroll;
+    }
+
+    private HBox buildHeader() {
         Label title = new Label("Computerized Garden Simulation");
         title.getStyleClass().add("app-title");
 
-        HBox metrics = new HBox(10,
+        HBox metrics = new HBox(8,
                 metric("Day", dayValue),
                 metric("Alive", aliveValue),
                 metric("Dead", deadValue),
@@ -169,9 +199,14 @@ public class DashboardView {
                 metric("Outside", outsideTempValue),
                 metric("Inside", insideTempValue)
         );
-        metrics.setAlignment(Pos.CENTER_LEFT);
+        metrics.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox header = new VBox(8, title, metrics);
+        // Title on the left, metrics pushed to the right edge of the same row,
+        // so the header is a single compact strip rather than two stacked rows.
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(14, title, spacer, metrics);
+        header.setAlignment(Pos.CENTER_LEFT);
         header.getStyleClass().add("header");
         return header;
     }
@@ -304,15 +339,49 @@ public class DashboardView {
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
         gardenBoard.getChildren().clear();
-        for (int index = 0; index < plants.size(); index++) {
-            GardenSnapshot.PlantView plant = plants.get(index);
+        // Lay tiles out by their stable board slot, not list order, so a
+        // removed plant leaves a visible empty plot rather than pulling later
+        // plants forward. Render every slot from 0 up to the highest occupied
+        // one; gaps render as empty tiles.
+        java.util.Map<Integer, GardenSnapshot.PlantView> bySlot = new java.util.HashMap<>();
+        int maxSlot = -1;
+        for (GardenSnapshot.PlantView plant : plants) {
+            bySlot.put(plant.slotIndex(), plant);
+            maxSlot = Math.max(maxSlot, plant.slotIndex());
+        }
+        for (int slot = 0; slot <= maxSlot; slot++) {
             StackPane tile = new StackPane();
             tile.getStyleClass().add("lawn-tile");
             tile.setMinSize(44, 42);
             tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-            tile.getChildren().add(plantTile(plant));
-            attachTileRemoval(tile, plant);
-            gardenBoard.add(tile, index % BOARD_COLUMNS, index / BOARD_COLUMNS);
+            GardenSnapshot.PlantView plant = bySlot.get(slot);
+            if (plant != null) {
+                tile.getChildren().add(plantTile(plant));
+                tile.setUserData(plant.name());
+                attachTileRemoval(tile, plant);
+                // Left-click selects the plant (drives the table selection,
+                // which in turn highlights the tile and enables Remove Selected).
+                tile.setOnMouseClicked(e -> {
+                    if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                        plantTable.getSelectionModel().select(plant);
+                    }
+                });
+            } else {
+                tile.getStyleClass().add("lawn-tile-empty");
+            }
+            gardenBoard.add(tile, slot % BOARD_COLUMNS, slot / BOARD_COLUMNS);
+        }
+        updateBoardSelectionStyles();
+    }
+
+    /** Outlines the tile whose plant is currently selected; clears the rest. */
+    private void updateBoardSelectionStyles() {
+        for (Node node : gardenBoard.getChildren()) {
+            boolean selected = selectedPlantName != null
+                    && selectedPlantName.equals(node.getUserData());
+            node.setStyle(selected
+                    ? "-fx-border-color: #ffcf33; -fx-border-width: 3; -fx-border-radius: 6;"
+                    : "");
         }
     }
 
@@ -373,6 +442,12 @@ public class DashboardView {
 
         plantTable.getColumns().setAll(List.of(name, health, water, status, parasites, deathReason));
         plantTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        // Selecting a row (here or via a board click) highlights the matching
+        // board tile; this is the single place the selection state is tracked.
+        plantTable.getSelectionModel().selectedItemProperty().addListener((obs, old, selected) -> {
+            selectedPlantName = selected == null ? null : selected.name();
+            updateBoardSelectionStyles();
+        });
         plantTable.setRowFactory(table -> new TableRow<>() {
             @Override
             protected void updateItem(GardenSnapshot.PlantView item, boolean empty) {

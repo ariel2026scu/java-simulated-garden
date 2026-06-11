@@ -67,6 +67,14 @@
     -fx-background-color: rgba(255,255,255,0.28);
 }
 
+/* Empty plot left behind by a removed plant — dimmer with a dashed outline so
+   it reads as "open ground a new plant can fill" rather than a missing tile. */
+.lawn-tile-empty {
+    -fx-background-color: rgba(0,0,0,0.10);
+    -fx-border-color: rgba(44, 93, 42, 0.30);
+    -fx-border-style: dashed;
+}
+
 .plant-tile-content {
     -fx-padding: 8;
     -fx-background-radius: 8;

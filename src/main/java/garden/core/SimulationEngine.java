@@ -127,7 +127,8 @@ public class SimulationEngine {
                         plant.getWaterLevel(),
                         plant.getStatus().name(),
                         plant.getActiveParasites().isEmpty() ? "-" : String.join("|", plant.getActiveParasites()),
-                        plant.getDeathReason().isBlank() ? "-" : plant.getDeathReason()))
+                        plant.getDeathReason().isBlank() ? "-" : plant.getDeathReason(),
+                        plant.getBoardSlot()))
                 .collect(Collectors.toList());
         return new GardenSnapshot(
                 context.getDay(),
