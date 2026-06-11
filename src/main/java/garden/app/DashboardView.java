@@ -16,8 +16,10 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
@@ -88,25 +90,27 @@ public class DashboardView {
 
         // Everything below the header lives in nested SplitPanes so the
         // operator can drag every block to the width/height they want:
-        //  - a vertical split stacks the Garden Defense Board over the
-        //    Plant Details / Event Log row (adjustable heights);
-        //  - an outer horizontal split places the controls, that centre
-        //    column, and the status panel side by side (adjustable widths).
+        //  - the top row is a horizontal split of controls | Garden Defense
+        //    Board | status, for adjustable widths;
+        //  - a vertical split stacks that row over the full-width Plant
+        //    Details / Event Log strip, for adjustable heights — keeping the
+        //    details + log spanning the whole bottom rather than flanked by
+        //    the side panels.
         VBox controls = buildControls();
         VBox status = buildStatusPanel();
-        SplitPane centerColumn = new SplitPane(buildGardenBoard(), buildBottomSplit());
-        centerColumn.setOrientation(Orientation.VERTICAL);
-        centerColumn.setDividerPositions(0.42);
-
-        SplitPane mainSplit = new SplitPane(controls, centerColumn, status);
-        mainSplit.setOrientation(Orientation.HORIZONTAL);
-        mainSplit.setDividerPositions(0.18, 0.82);
+        SplitPane topRow = new SplitPane(controls, buildGardenBoard(), status);
+        topRow.setOrientation(Orientation.HORIZONTAL);
+        topRow.setDividerPositions(0.18, 0.82);
         // Keep the side panels' widths stable when the window resizes — the
-        // centre column should absorb the extra space, not the controls.
+        // board should absorb the extra space, not the controls.
         SplitPane.setResizableWithParent(controls, false);
         SplitPane.setResizableWithParent(status, false);
 
-        root.setCenter(mainSplit);
+        SplitPane body = new SplitPane(topRow, buildBottomSplit());
+        body.setOrientation(Orientation.VERTICAL);
+        body.setDividerPositions(0.5);
+
+        root.setCenter(body);
         refresh();
     }
 
@@ -301,13 +305,36 @@ public class DashboardView {
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
         gardenBoard.getChildren().clear();
         for (int index = 0; index < plants.size(); index++) {
+            GardenSnapshot.PlantView plant = plants.get(index);
             StackPane tile = new StackPane();
             tile.getStyleClass().add("lawn-tile");
             tile.setMinSize(44, 42);
             tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-            tile.getChildren().add(plantTile(plants.get(index)));
+            tile.getChildren().add(plantTile(plant));
+            attachTileRemoval(tile, plant);
             gardenBoard.add(tile, index % BOARD_COLUMNS, index / BOARD_COLUMNS);
         }
+    }
+
+    /**
+     * Lets the operator remove a plant straight from the Garden Defense Board:
+     * right-click (or context-menu key) on a tile pops a "Remove" item, and a
+     * tooltip spells out the plant, its status, and the gesture.
+     */
+    private void attachTileRemoval(StackPane tile, GardenSnapshot.PlantView plant) {
+        Tooltip.install(tile, new Tooltip(
+                plant.name() + " · " + plant.status() + "\nRight-click to remove"));
+        MenuItem remove = new MenuItem("Remove " + plant.name());
+        remove.setOnAction(e -> {
+            if (engine.removePlant(plant.name())) {
+                notifyChanged();
+            }
+        });
+        ContextMenu menu = new ContextMenu(remove);
+        tile.setOnContextMenuRequested(e -> {
+            menu.show(tile, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
     }
 
     private VBox plantTile(GardenSnapshot.PlantView plant) {
@@ -413,6 +440,10 @@ public class DashboardView {
             notifyChanged();
         });
 
+        Button openLogButton = secondaryButton("Open Log File");
+        openLogButton.setTooltip(new Tooltip("Open log.txt in your default text app."));
+        openLogButton.setOnAction(event -> openLogFile());
+
         VBox panel = new VBox(10,
                 sectionTitle("Garden"),
                 nextDay,
@@ -427,7 +458,8 @@ public class DashboardView {
                 statusRow("Dead", deadStatusValue),
                 new Separator(),
                 sectionTitle("Log File"),
-                logPathValue
+                logPathValue,
+                openLogButton
         );
         panel.getStyleClass().add("side-panel");
         panel.setPrefWidth(230);
@@ -435,6 +467,25 @@ public class DashboardView {
         logPathValue.getStyleClass().add("path-label");
         logPathValue.setWrapText(true);
         return panel;
+    }
+
+    /**
+     * Opens log.txt in the OS default text app so the operator can read the
+     * full file outside the in-panel Event Log. Degrades silently if AWT
+     * Desktop is unavailable.
+     */
+    private void openLogFile() {
+        try {
+            java.io.File file = engine.getLogPath().toAbsolutePath().toFile();
+            if (file.exists() && java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                java.awt.Desktop.getDesktop().open(file);
+            } else {
+                System.err.println("[DashboardView] cannot open log file: " + file);
+            }
+        } catch (Exception ex) {
+            System.err.println("[DashboardView] could not open log file: " + ex);
+        }
     }
 
     /**
