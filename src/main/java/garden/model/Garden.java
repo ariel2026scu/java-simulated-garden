@@ -26,6 +26,16 @@ public class Garden {
         plants.add(plant);
     }
 
+    /** Removes the given plant instance. Returns true if it was present. */
+    public boolean removePlant(Plant plant) {
+        return plants.remove(plant);
+    }
+
+    /** Removes the (unique-named) plant matching the given name, if any. */
+    public boolean removePlantByName(String name) {
+        return plants.removeIf(plant -> plant.getName().equals(name));
+    }
+
     public List<Plant> getPlants() {
         return Collections.unmodifiableList(plants);
     }

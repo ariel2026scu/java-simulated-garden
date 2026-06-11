@@ -17,6 +17,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
@@ -84,13 +85,28 @@ public class DashboardView {
         this.engine = engine;
         root.getStyleClass().add("root-pane");
         root.setTop(buildHeader());
-        root.setLeft(buildControls());
-        // Compact Garden Defense Board in the centre, with Plant Details and
-        // Event Log sharing the full-width bottom in a draggable horizontal
-        // split — Plant Details on the left, Event Log on the right.
-        root.setCenter(buildGardenBoard());
-        root.setRight(buildStatusPanel());
-        root.setBottom(buildBottomSplit());
+
+        // Everything below the header lives in nested SplitPanes so the
+        // operator can drag every block to the width/height they want:
+        //  - a vertical split stacks the Garden Defense Board over the
+        //    Plant Details / Event Log row (adjustable heights);
+        //  - an outer horizontal split places the controls, that centre
+        //    column, and the status panel side by side (adjustable widths).
+        VBox controls = buildControls();
+        VBox status = buildStatusPanel();
+        SplitPane centerColumn = new SplitPane(buildGardenBoard(), buildBottomSplit());
+        centerColumn.setOrientation(Orientation.VERTICAL);
+        centerColumn.setDividerPositions(0.42);
+
+        SplitPane mainSplit = new SplitPane(controls, centerColumn, status);
+        mainSplit.setOrientation(Orientation.HORIZONTAL);
+        mainSplit.setDividerPositions(0.18, 0.82);
+        // Keep the side panels' widths stable when the window resizes — the
+        // centre column should absorb the extra space, not the controls.
+        SplitPane.setResizableWithParent(controls, false);
+        SplitPane.setResizableWithParent(status, false);
+
+        root.setCenter(mainSplit);
         refresh();
     }
 
@@ -164,6 +180,17 @@ public class DashboardView {
         parasiteField.setValue("insects");
         parasiteField.setEditable(true);
         parasiteField.setPrefWidth(160);
+        // Show, next to each parasite, a coloured dot per plant variety it can
+        // infest — so the operator sees which plants a pest hits without
+        // relying on long text. Hovering a dot names the plant.
+        parasiteField.setCellFactory(lv -> pestListCell());
+        // Editable combos render a text editor (not the cell) as their button,
+        // so a tooltip on the field carries the same "which plants" detail for
+        // the current selection.
+        Runnable updatePestTip = () ->
+                parasiteField.setTooltip(new Tooltip(affectedPlantsText(parasiteField.getValue())));
+        updatePestTip.run();
+        parasiteField.valueProperty().addListener((o, a, b) -> updatePestTip.run());
 
         Button rainButton = primaryButton("Rain");
         rainButton.setOnAction(event -> {
@@ -209,13 +236,29 @@ public class DashboardView {
             }
         });
 
+        Button removePlantButton = secondaryButton("Remove Selected");
+        // Enabled only while a plant row is selected in the Plant Details table.
+        removePlantButton.disableProperty().bind(
+                plantTable.getSelectionModel().selectedItemProperty().isNull());
+        removePlantButton.setOnAction(event -> {
+            GardenSnapshot.PlantView selected = plantTable.getSelectionModel().getSelectedItem();
+            if (selected != null && engine.removePlant(selected.name())) {
+                notifyChanged();
+            }
+        });
+        Label removeHint = new Label("Pick a row in Plant Details below, then remove it.");
+        removeHint.setWrapText(true);
+        removeHint.setStyle("-fx-font-size: 11px; -fx-text-fill: #6b7a70;");
+
         VBox controls = new VBox(12,
                 sectionTitle("Events"),
                 events,
                 new Separator(),
                 sectionTitle("Planting"),
                 plantTypeCombo,
-                addPlantButton
+                addPlantButton,
+                removePlantButton,
+                removeHint
         );
         controls.getStyleClass().add("side-panel");
         controls.setPrefWidth(230);
@@ -340,8 +383,9 @@ public class DashboardView {
         SplitPane split = new SplitPane(buildPlantDetailsPanel(), buildLogPanel());
         split.setDividerPositions(0.55);
         split.setPrefHeight(460);
-        split.setMinHeight(420);
-        BorderPane.setMargin(split, new Insets(8, 8, 8, 8));
+        // Modest minimum so the enclosing vertical split's divider can still
+        // be dragged to give the board more room.
+        split.setMinHeight(220);
         return split;
     }
 
@@ -578,6 +622,78 @@ public class DashboardView {
         options.add("insects");
         options.addAll(known);
         return options;
+    }
+
+    /** Dropdown cell that renders a parasite name plus a dot per host plant. */
+    private ListCell<String> pestListCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                setText(null);
+                setGraphic(pestRow(item));
+            }
+        };
+    }
+
+    /** "name  ●●●" row: a coloured plant-icon dot for each affected variety. */
+    private HBox pestRow(String parasite) {
+        Label name = new Label(parasite);
+        name.setMinWidth(70);
+        HBox icons = new HBox(3);
+        icons.setAlignment(Pos.CENTER_LEFT);
+        for (PlantType type : plantsAffectedBy(parasite)) {
+            Circle dot = new Circle(6);
+            dot.getStyleClass().addAll("plant-icon", type.getDisplayName().toLowerCase());
+            Tooltip.install(dot, new Tooltip(type.getDisplayName()));
+            icons.getChildren().add(dot);
+        }
+        HBox row = new HBox(8, name, icons);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /**
+     * Plant varieties a parasite can infest. The generic "insects" (and blank)
+     * map to every variety, matching how PestControlSystem fans a generic pest
+     * out to each plant's own vulnerabilities; a specific name matches the
+     * varieties that list it in {@link PlantType#getParasites()}.
+     */
+    private List<PlantType> plantsAffectedBy(String parasite) {
+        if (parasite == null) {
+            return List.of();
+        }
+        String p = parasite.trim().toLowerCase();
+        if (p.isEmpty() || p.equals("insects")) {
+            return Arrays.asList(PlantType.values());
+        }
+        List<PlantType> result = new ArrayList<>();
+        for (PlantType type : PlantType.values()) {
+            if (type.getParasites().stream().anyMatch(x -> x.equalsIgnoreCase(p))) {
+                result.add(type);
+            }
+        }
+        return result;
+    }
+
+    /** Human-readable "which plants does this hit" string for the field tooltip. */
+    private String affectedPlantsText(String parasite) {
+        List<PlantType> affected = plantsAffectedBy(parasite);
+        if (affected.isEmpty()) {
+            return "No known host plants for \"" + parasite + "\".";
+        }
+        String names = affected.stream()
+                .map(PlantType::getDisplayName)
+                .collect(Collectors.joining(", "));
+        if (parasite != null && parasite.trim().equalsIgnoreCase("insects")) {
+            return "insects → affects every variety: " + names;
+        }
+        return parasite + " → affects: " + names;
     }
 
     private TableCell<GardenSnapshot.PlantView, Number> progressCell(int maxValue) {

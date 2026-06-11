@@ -185,6 +185,28 @@ public class SimulationEngine {
                 "Manually added " + plant.getName() + " to the garden via UI.");
     }
 
+    /**
+     * Removes the named plant from the running garden (GUI action). Returns
+     * true if a plant matched and was removed.
+     */
+    public synchronized boolean removePlant(String name) {
+        ensureInitialized();
+        Plant target = null;
+        for (Plant plant : garden.getPlants()) {
+            if (plant.getName().equals(name)) {
+                target = plant;
+                break;
+            }
+        }
+        if (target == null) {
+            return false;
+        }
+        garden.removePlant(target);
+        context.log("MANUAL", target.getType().getDisplayName(), "SimulationEngine", "PLANT_REMOVED", garden,
+                "Manually removed " + name + " from the garden via UI.");
+        return true;
+    }
+
     public synchronized Map<String, Object> getPlantDefinitions() {
         ensureInitialized();
         Map<PlantType, Plant> uniqueAliveTypes = new LinkedHashMap<>();
