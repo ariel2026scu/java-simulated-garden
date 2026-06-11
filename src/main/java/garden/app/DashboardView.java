@@ -86,6 +86,8 @@ public class DashboardView {
     private Runnable onStateChanged = () -> {};
     /** Names of the plants highlighted on the board / selected in the table. */
     private final java.util.Set<String> selectedPlantNames = new java.util.HashSet<>();
+    /** "Remove All Dead" button — disabled when nothing is dead. Updated in refresh(). */
+    private Button removeDeadButton;
 
     public DashboardView(SimulationEngine engine) {
         this.engine = engine;
@@ -136,6 +138,9 @@ public class DashboardView {
         dayValue.setText(Integer.toString(snapshot.day()));
         aliveValue.setText(Integer.toString(snapshot.alivePlants()));
         deadValue.setText(Integer.toString(snapshot.deadPlants()));
+        if (removeDeadButton != null) {
+            removeDeadButton.setDisable(snapshot.deadPlants() == 0);
+        }
         soilValue.setText(snapshot.soilNutrients() + "%");
         outsideTempValue.setText(snapshot.outsideTemperature() + "°F");
         insideTempValue.setText(snapshot.ambientTemperature() + "°F");
@@ -212,7 +217,9 @@ public class DashboardView {
     }
 
     private VBox buildControls() {
-        Spinner<Integer> rainAmount = editableSpinner(0, 45, 10);
+        // Allow a genuinely heavy pour (up to 200mm) so an overwatering test
+        // isn't silently capped at 45mm — well past every variety's tolerance.
+        Spinner<Integer> rainAmount = editableSpinner(0, 200, 10);
         Spinner<Integer> temperature = editableSpinner(40, 120, 72);
         ComboBox<String> parasiteField = new ComboBox<>(
                 FXCollections.observableArrayList(buildParasiteOptions()));
@@ -293,7 +300,10 @@ public class DashboardView {
             }
         });
 
-        Button removeDeadButton = secondaryButton("Remove All Dead");
+        removeDeadButton = secondaryButton("Remove All Dead");
+        // Disabled until there is at least one dead plant (refresh() keeps this
+        // in sync as plants die / are cleared).
+        removeDeadButton.setDisable(true);
         removeDeadButton.setOnAction(event -> {
             if (engine.removeDeadPlants() > 0) {
                 notifyChanged();
