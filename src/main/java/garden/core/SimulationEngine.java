@@ -208,6 +208,23 @@ public class SimulationEngine {
         return true;
     }
 
+    /**
+     * Removes every dead plant from the garden in one action (GUI convenience).
+     * Returns how many were cleared.
+     */
+    public synchronized int removeDeadPlants() {
+        ensureInitialized();
+        List<Plant> dead = new ArrayList<>(garden.getDeadPlants());
+        for (Plant plant : dead) {
+            garden.removePlant(plant);
+        }
+        if (!dead.isEmpty()) {
+            context.log("MANUAL", "-", "SimulationEngine", "DEAD_PLANTS_CLEARED", garden,
+                    "Cleared " + dead.size() + " dead plant(s) from the garden via UI.");
+        }
+        return dead.size();
+    }
+
     public synchronized Map<String, Object> getPlantDefinitions() {
         ensureInitialized();
         Map<PlantType, Plant> uniqueAliveTypes = new LinkedHashMap<>();

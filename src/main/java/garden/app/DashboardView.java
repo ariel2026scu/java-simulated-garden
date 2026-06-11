@@ -22,6 +22,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
@@ -83,8 +84,8 @@ public class DashboardView {
     private static final int RECENT_EVENTS_VISIBLE = 5;
     private final Label[] recentEventLabels = new Label[RECENT_EVENTS_VISIBLE];
     private Runnable onStateChanged = () -> {};
-    /** Name of the plant highlighted on the board / selected in the table, or null. */
-    private String selectedPlantName;
+    /** Names of the plants highlighted on the board / selected in the table. */
+    private final java.util.Set<String> selectedPlantNames = new java.util.HashSet<>();
 
     public DashboardView(SimulationEngine engine) {
         this.engine = engine;
@@ -148,17 +149,16 @@ public class DashboardView {
         infestedValue.setText(count(statusCounts, "INFESTED"));
         deadStatusValue.setText(count(statusCounts, "DEAD"));
 
-        // setItems clears the table selection (and thus selectedPlantName via
+        // setItems clears the table selection (and thus selectedPlantNames via
         // the listener), so remember it and re-select by name afterward to keep
         // the board highlight stable across refreshes.
-        String keepSelection = selectedPlantName;
+        java.util.Set<String> keepSelection = new java.util.HashSet<>(selectedPlantNames);
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
         renderGardenBoard(snapshot.plants());
-        if (keepSelection != null) {
+        if (!keepSelection.isEmpty()) {
             for (GardenSnapshot.PlantView pv : plantTable.getItems()) {
-                if (keepSelection.equals(pv.name())) {
+                if (keepSelection.contains(pv.name())) {
                     plantTable.getSelectionModel().select(pv);
-                    break;
                 }
             }
         }
@@ -276,16 +276,32 @@ public class DashboardView {
         });
 
         Button removePlantButton = secondaryButton("Remove Selected");
-        // Enabled only while a plant row is selected in the Plant Details table.
+        // Enabled only while one or more plant rows are selected.
         removePlantButton.disableProperty().bind(
                 plantTable.getSelectionModel().selectedItemProperty().isNull());
         removePlantButton.setOnAction(event -> {
-            GardenSnapshot.PlantView selected = plantTable.getSelectionModel().getSelectedItem();
-            if (selected != null && engine.removePlant(selected.name())) {
+            List<GardenSnapshot.PlantView> selected =
+                    new ArrayList<>(plantTable.getSelectionModel().getSelectedItems());
+            boolean removedAny = false;
+            for (GardenSnapshot.PlantView plant : selected) {
+                if (plant != null && engine.removePlant(plant.name())) {
+                    removedAny = true;
+                }
+            }
+            if (removedAny) {
                 notifyChanged();
             }
         });
-        Label removeHint = new Label("Pick a row in Plant Details below, then remove it.");
+
+        Button removeDeadButton = secondaryButton("Remove All Dead");
+        removeDeadButton.setOnAction(event -> {
+            if (engine.removeDeadPlants() > 0) {
+                notifyChanged();
+            }
+        });
+
+        Label removeHint = new Label(
+                "Click a board tile or a Plant Details row; Ctrl/Shift-click for several, then Remove Selected.");
         removeHint.setWrapText(true);
         removeHint.setStyle("-fx-font-size: 11px; -fx-text-fill: #6b7a70;");
 
@@ -297,6 +313,7 @@ public class DashboardView {
                 plantTypeCombo,
                 addPlantButton,
                 removePlantButton,
+                removeDeadButton,
                 removeHint
         );
         controls.getStyleClass().add("side-panel");
@@ -359,10 +376,13 @@ public class DashboardView {
                 tile.getChildren().add(plantTile(plant));
                 tile.setUserData(plant.name());
                 attachTileRemoval(tile, plant);
-                // Left-click selects the plant (drives the table selection,
-                // which in turn highlights the tile and enables Remove Selected).
+                // Left-click selects just this plant; Ctrl/Shift-click adds it
+                // to the current selection (for multi-remove from the board).
                 tile.setOnMouseClicked(e -> {
                     if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                        if (!(e.isShortcutDown() || e.isShiftDown())) {
+                            plantTable.getSelectionModel().clearSelection();
+                        }
                         plantTable.getSelectionModel().select(plant);
                     }
                 });
@@ -374,11 +394,11 @@ public class DashboardView {
         updateBoardSelectionStyles();
     }
 
-    /** Outlines the tile whose plant is currently selected; clears the rest. */
+    /** Outlines the tiles whose plants are currently selected; clears the rest. */
     private void updateBoardSelectionStyles() {
         for (Node node : gardenBoard.getChildren()) {
-            boolean selected = selectedPlantName != null
-                    && selectedPlantName.equals(node.getUserData());
+            boolean selected = node.getUserData() instanceof String name
+                    && selectedPlantNames.contains(name);
             node.setStyle(selected
                     ? "-fx-border-color: #ffcf33; -fx-border-width: 3; -fx-border-radius: 6;"
                     : "");
@@ -442,12 +462,20 @@ public class DashboardView {
 
         plantTable.getColumns().setAll(List.of(name, health, water, status, parasites, deathReason));
         plantTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        // Selecting a row (here or via a board click) highlights the matching
-        // board tile; this is the single place the selection state is tracked.
-        plantTable.getSelectionModel().selectedItemProperty().addListener((obs, old, selected) -> {
-            selectedPlantName = selected == null ? null : selected.name();
-            updateBoardSelectionStyles();
-        });
+        // Multiple rows can be selected (Ctrl/Shift-click) so several plants can
+        // be removed at once. Selecting rows (here or via a board click) tracks
+        // the chosen plant names and highlights the matching board tiles.
+        plantTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        plantTable.getSelectionModel().getSelectedItems().addListener(
+                (javafx.collections.ListChangeListener<GardenSnapshot.PlantView>) change -> {
+                    selectedPlantNames.clear();
+                    for (GardenSnapshot.PlantView pv : plantTable.getSelectionModel().getSelectedItems()) {
+                        if (pv != null) {
+                            selectedPlantNames.add(pv.name());
+                        }
+                    }
+                    updateBoardSelectionStyles();
+                });
         plantTable.setRowFactory(table -> new TableRow<>() {
             @Override
             protected void updateItem(GardenSnapshot.PlantView item, boolean empty) {
