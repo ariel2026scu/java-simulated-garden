@@ -16,9 +16,13 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
@@ -34,6 +38,7 @@ import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
@@ -79,18 +84,47 @@ public class DashboardView {
     private static final int RECENT_EVENTS_VISIBLE = 5;
     private final Label[] recentEventLabels = new Label[RECENT_EVENTS_VISIBLE];
     private Runnable onStateChanged = () -> {};
+    /** Names of the plants highlighted on the board / selected in the table. */
+    private final java.util.Set<String> selectedPlantNames = new java.util.HashSet<>();
+    /** "Remove All Dead" button — disabled when nothing is dead. Updated in refresh(). */
+    private Button removeDeadButton;
 
     public DashboardView(SimulationEngine engine) {
         this.engine = engine;
         root.getStyleClass().add("root-pane");
         root.setTop(buildHeader());
-        root.setLeft(buildControls());
-        // Compact Garden Defense Board in the centre, with Plant Details and
-        // Event Log sharing the full-width bottom in a draggable horizontal
-        // split — Plant Details on the left, Event Log on the right.
-        root.setCenter(buildGardenBoard());
-        root.setRight(buildStatusPanel());
-        root.setBottom(buildBottomSplit());
+
+        // Everything below the header lives in nested SplitPanes so the
+        // operator can drag every block to the width/height they want:
+        //  - the top row is a horizontal split of controls | Garden Defense
+        //    Board | status, for adjustable widths;
+        //  - a vertical split stacks that row over the full-width Plant
+        //    Details / Event Log strip, for adjustable heights — keeping the
+        //    details + log spanning the whole bottom rather than flanked by
+        //    the side panels.
+        // Wrap the side panels in ScrollPanes: it lets the top row shrink
+        // vertically (so the vertical divider below can be dragged to give the
+        // bottom strip more height) and keeps tall control stacks reachable on
+        // a short window.
+        ScrollPane controls = sidePanelScroll(buildControls());
+        ScrollPane status = sidePanelScroll(buildStatusPanel());
+        SplitPane topRow = new SplitPane(controls, buildGardenBoard(), status);
+        topRow.setOrientation(Orientation.HORIZONTAL);
+        topRow.setDividerPositions(0.18, 0.82);
+        // Keep the side panels' widths stable when the window resizes — the
+        // board should absorb the extra space, not the controls.
+        SplitPane.setResizableWithParent(controls, false);
+        SplitPane.setResizableWithParent(status, false);
+
+        SplitPane body = new SplitPane(topRow, buildBottomSplit());
+        body.setOrientation(Orientation.VERTICAL);
+        // Give the top row most of the height at startup so the right-hand
+        // status panel shows its full stack (down to the Open Log File button)
+        // without the bottom Plant Details / Event Log strip crowding it out.
+        // The divider is still draggable if the operator wants a taller bottom.
+        body.setDividerPositions(0.62);
+
+        root.setCenter(body);
         refresh();
     }
 
@@ -108,6 +142,9 @@ public class DashboardView {
         dayValue.setText(Integer.toString(snapshot.day()));
         aliveValue.setText(Integer.toString(snapshot.alivePlants()));
         deadValue.setText(Integer.toString(snapshot.deadPlants()));
+        if (removeDeadButton != null) {
+            removeDeadButton.setDisable(snapshot.deadPlants() == 0);
+        }
         soilValue.setText(snapshot.soilNutrients() + "%");
         outsideTempValue.setText(snapshot.outsideTemperature() + "°F");
         insideTempValue.setText(snapshot.ambientTemperature() + "°F");
@@ -121,8 +158,19 @@ public class DashboardView {
         infestedValue.setText(count(statusCounts, "INFESTED"));
         deadStatusValue.setText(count(statusCounts, "DEAD"));
 
+        // setItems clears the table selection (and thus selectedPlantNames via
+        // the listener), so remember it and re-select by name afterward to keep
+        // the board highlight stable across refreshes.
+        java.util.Set<String> keepSelection = new java.util.HashSet<>(selectedPlantNames);
         plantTable.setItems(FXCollections.observableArrayList(snapshot.plants()));
         renderGardenBoard(snapshot.plants());
+        if (!keepSelection.isEmpty()) {
+            for (GardenSnapshot.PlantView pv : plantTable.getItems()) {
+                if (keepSelection.contains(pv.name())) {
+                    plantTable.getSelectionModel().select(pv);
+                }
+            }
+        }
         refreshRecentEvents();
         try {
             logArea.setText(Files.readString(engine.getLogPath()));
@@ -137,11 +185,22 @@ public class DashboardView {
         onStateChanged.run();
     }
 
-    private VBox buildHeader() {
+    /** Wraps a side panel so it scrolls vertically and keeps its width. */
+    private ScrollPane sidePanelScroll(Region panel) {
+        ScrollPane scroll = new ScrollPane(panel);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setMinWidth(210);
+        scroll.setPrefWidth(232);
+        scroll.setStyle("-fx-background-color: transparent;");
+        return scroll;
+    }
+
+    private HBox buildHeader() {
         Label title = new Label("Computerized Garden Simulation");
         title.getStyleClass().add("app-title");
 
-        HBox metrics = new HBox(10,
+        HBox metrics = new HBox(8,
                 metric("Day", dayValue),
                 metric("Alive", aliveValue),
                 metric("Dead", deadValue),
@@ -149,21 +208,39 @@ public class DashboardView {
                 metric("Outside", outsideTempValue),
                 metric("Inside", insideTempValue)
         );
-        metrics.setAlignment(Pos.CENTER_LEFT);
+        metrics.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox header = new VBox(8, title, metrics);
+        // Title on the left, metrics pushed to the right edge of the same row,
+        // so the header is a single compact strip rather than two stacked rows.
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(14, title, spacer, metrics);
+        header.setAlignment(Pos.CENTER_LEFT);
         header.getStyleClass().add("header");
         return header;
     }
 
     private VBox buildControls() {
-        Spinner<Integer> rainAmount = editableSpinner(0, 45, 10);
+        // Allow a genuinely heavy pour (up to 200mm) so an overwatering test
+        // isn't silently capped at 45mm — well past every variety's tolerance.
+        Spinner<Integer> rainAmount = editableSpinner(0, 200, 10);
         Spinner<Integer> temperature = editableSpinner(40, 120, 72);
         ComboBox<String> parasiteField = new ComboBox<>(
                 FXCollections.observableArrayList(buildParasiteOptions()));
         parasiteField.setValue("insects");
         parasiteField.setEditable(true);
         parasiteField.setPrefWidth(160);
+        // Show, next to each parasite, a coloured dot per plant variety it can
+        // infest — so the operator sees which plants a pest hits without
+        // relying on long text. Hovering a dot names the plant.
+        parasiteField.setCellFactory(lv -> pestListCell());
+        // Editable combos render a text editor (not the cell) as their button,
+        // so a tooltip on the field carries the same "which plants" detail for
+        // the current selection.
+        Runnable updatePestTip = () ->
+                parasiteField.setTooltip(new Tooltip(affectedPlantsText(parasiteField.getValue())));
+        updatePestTip.run();
+        parasiteField.valueProperty().addListener((o, a, b) -> updatePestTip.run());
 
         Button rainButton = primaryButton("Rain");
         rainButton.setOnAction(event -> {
@@ -209,13 +286,49 @@ public class DashboardView {
             }
         });
 
+        Button removePlantButton = secondaryButton("Remove Selected");
+        // Enabled only while one or more plant rows are selected.
+        removePlantButton.disableProperty().bind(
+                plantTable.getSelectionModel().selectedItemProperty().isNull());
+        removePlantButton.setOnAction(event -> {
+            List<GardenSnapshot.PlantView> selected =
+                    new ArrayList<>(plantTable.getSelectionModel().getSelectedItems());
+            boolean removedAny = false;
+            for (GardenSnapshot.PlantView plant : selected) {
+                if (plant != null && engine.removePlant(plant.name())) {
+                    removedAny = true;
+                }
+            }
+            if (removedAny) {
+                notifyChanged();
+            }
+        });
+
+        removeDeadButton = secondaryButton("Remove All Dead");
+        // Disabled until there is at least one dead plant (refresh() keeps this
+        // in sync as plants die / are cleared).
+        removeDeadButton.setDisable(true);
+        removeDeadButton.setOnAction(event -> {
+            if (engine.removeDeadPlants() > 0) {
+                notifyChanged();
+            }
+        });
+
+        Label removeHint = new Label(
+                "Click a board tile or a Plant Details row; Ctrl/Shift-click for several, then Remove Selected.");
+        removeHint.setWrapText(true);
+        removeHint.setStyle("-fx-font-size: 11px; -fx-text-fill: #6b7a70;");
+
         VBox controls = new VBox(12,
                 sectionTitle("Events"),
                 events,
                 new Separator(),
                 sectionTitle("Planting"),
                 plantTypeCombo,
-                addPlantButton
+                addPlantButton,
+                removePlantButton,
+                removeDeadButton,
+                removeHint
         );
         controls.getStyleClass().add("side-panel");
         controls.setPrefWidth(230);
@@ -257,14 +370,74 @@ public class DashboardView {
 
     private void renderGardenBoard(List<GardenSnapshot.PlantView> plants) {
         gardenBoard.getChildren().clear();
-        for (int index = 0; index < plants.size(); index++) {
+        // Lay tiles out by their stable board slot, not list order, so a
+        // removed plant leaves a visible empty plot rather than pulling later
+        // plants forward. Render every slot from 0 up to the highest occupied
+        // one; gaps render as empty tiles.
+        java.util.Map<Integer, GardenSnapshot.PlantView> bySlot = new java.util.HashMap<>();
+        int maxSlot = -1;
+        for (GardenSnapshot.PlantView plant : plants) {
+            bySlot.put(plant.slotIndex(), plant);
+            maxSlot = Math.max(maxSlot, plant.slotIndex());
+        }
+        for (int slot = 0; slot <= maxSlot; slot++) {
             StackPane tile = new StackPane();
             tile.getStyleClass().add("lawn-tile");
             tile.setMinSize(44, 42);
             tile.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-            tile.getChildren().add(plantTile(plants.get(index)));
-            gardenBoard.add(tile, index % BOARD_COLUMNS, index / BOARD_COLUMNS);
+            GardenSnapshot.PlantView plant = bySlot.get(slot);
+            if (plant != null) {
+                tile.getChildren().add(plantTile(plant));
+                tile.setUserData(plant.name());
+                attachTileRemoval(tile, plant);
+                // Left-click selects just this plant; Ctrl/Shift-click adds it
+                // to the current selection (for multi-remove from the board).
+                tile.setOnMouseClicked(e -> {
+                    if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                        if (!(e.isShortcutDown() || e.isShiftDown())) {
+                            plantTable.getSelectionModel().clearSelection();
+                        }
+                        plantTable.getSelectionModel().select(plant);
+                    }
+                });
+            } else {
+                tile.getStyleClass().add("lawn-tile-empty");
+            }
+            gardenBoard.add(tile, slot % BOARD_COLUMNS, slot / BOARD_COLUMNS);
         }
+        updateBoardSelectionStyles();
+    }
+
+    /** Outlines the tiles whose plants are currently selected; clears the rest. */
+    private void updateBoardSelectionStyles() {
+        for (Node node : gardenBoard.getChildren()) {
+            boolean selected = node.getUserData() instanceof String name
+                    && selectedPlantNames.contains(name);
+            node.setStyle(selected
+                    ? "-fx-border-color: #ffcf33; -fx-border-width: 3; -fx-border-radius: 6;"
+                    : "");
+        }
+    }
+
+    /**
+     * Lets the operator remove a plant straight from the Garden Defense Board:
+     * right-click (or context-menu key) on a tile pops a "Remove" item, and a
+     * tooltip spells out the plant, its status, and the gesture.
+     */
+    private void attachTileRemoval(StackPane tile, GardenSnapshot.PlantView plant) {
+        Tooltip.install(tile, new Tooltip(
+                plant.name() + " · " + plant.status() + "\nRight-click to remove"));
+        MenuItem remove = new MenuItem("Remove " + plant.name());
+        remove.setOnAction(e -> {
+            if (engine.removePlant(plant.name())) {
+                notifyChanged();
+            }
+        });
+        ContextMenu menu = new ContextMenu(remove);
+        tile.setOnContextMenuRequested(e -> {
+            menu.show(tile, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
     }
 
     private VBox plantTile(GardenSnapshot.PlantView plant) {
@@ -303,6 +476,20 @@ public class DashboardView {
 
         plantTable.getColumns().setAll(List.of(name, health, water, status, parasites, deathReason));
         plantTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        // Multiple rows can be selected (Ctrl/Shift-click) so several plants can
+        // be removed at once. Selecting rows (here or via a board click) tracks
+        // the chosen plant names and highlights the matching board tiles.
+        plantTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        plantTable.getSelectionModel().getSelectedItems().addListener(
+                (javafx.collections.ListChangeListener<GardenSnapshot.PlantView>) change -> {
+                    selectedPlantNames.clear();
+                    for (GardenSnapshot.PlantView pv : plantTable.getSelectionModel().getSelectedItems()) {
+                        if (pv != null) {
+                            selectedPlantNames.add(pv.name());
+                        }
+                    }
+                    updateBoardSelectionStyles();
+                });
         plantTable.setRowFactory(table -> new TableRow<>() {
             @Override
             protected void updateItem(GardenSnapshot.PlantView item, boolean empty) {
@@ -340,8 +527,9 @@ public class DashboardView {
         SplitPane split = new SplitPane(buildPlantDetailsPanel(), buildLogPanel());
         split.setDividerPositions(0.55);
         split.setPrefHeight(460);
-        split.setMinHeight(420);
-        BorderPane.setMargin(split, new Insets(8, 8, 8, 8));
+        // Modest minimum so the enclosing vertical split's divider can still
+        // be dragged to give the board more room.
+        split.setMinHeight(220);
         return split;
     }
 
@@ -369,6 +557,10 @@ public class DashboardView {
             notifyChanged();
         });
 
+        Button openLogButton = secondaryButton("Open Log File");
+        openLogButton.setTooltip(new Tooltip("Open log.txt in your default text app."));
+        openLogButton.setOnAction(event -> openLogFile());
+
         VBox panel = new VBox(10,
                 sectionTitle("Garden"),
                 nextDay,
@@ -383,7 +575,8 @@ public class DashboardView {
                 statusRow("Dead", deadStatusValue),
                 new Separator(),
                 sectionTitle("Log File"),
-                logPathValue
+                logPathValue,
+                openLogButton
         );
         panel.getStyleClass().add("side-panel");
         panel.setPrefWidth(230);
@@ -391,6 +584,25 @@ public class DashboardView {
         logPathValue.getStyleClass().add("path-label");
         logPathValue.setWrapText(true);
         return panel;
+    }
+
+    /**
+     * Opens log.txt in the OS default text app so the operator can read the
+     * full file outside the in-panel Event Log. Degrades silently if AWT
+     * Desktop is unavailable.
+     */
+    private void openLogFile() {
+        try {
+            java.io.File file = engine.getLogPath().toAbsolutePath().toFile();
+            if (file.exists() && java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                java.awt.Desktop.getDesktop().open(file);
+            } else {
+                System.err.println("[DashboardView] cannot open log file: " + file);
+            }
+        } catch (Exception ex) {
+            System.err.println("[DashboardView] could not open log file: " + ex);
+        }
     }
 
     /**
@@ -578,6 +790,78 @@ public class DashboardView {
         options.add("insects");
         options.addAll(known);
         return options;
+    }
+
+    /** Dropdown cell that renders a parasite name plus a dot per host plant. */
+    private ListCell<String> pestListCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                setText(null);
+                setGraphic(pestRow(item));
+            }
+        };
+    }
+
+    /** "name  ●●●" row: a coloured plant-icon dot for each affected variety. */
+    private HBox pestRow(String parasite) {
+        Label name = new Label(parasite);
+        name.setMinWidth(70);
+        HBox icons = new HBox(3);
+        icons.setAlignment(Pos.CENTER_LEFT);
+        for (PlantType type : plantsAffectedBy(parasite)) {
+            Circle dot = new Circle(6);
+            dot.getStyleClass().addAll("plant-icon", type.getDisplayName().toLowerCase());
+            Tooltip.install(dot, new Tooltip(type.getDisplayName()));
+            icons.getChildren().add(dot);
+        }
+        HBox row = new HBox(8, name, icons);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /**
+     * Plant varieties a parasite can infest. The generic "insects" (and blank)
+     * map to every variety, matching how PestControlSystem fans a generic pest
+     * out to each plant's own vulnerabilities; a specific name matches the
+     * varieties that list it in {@link PlantType#getParasites()}.
+     */
+    private List<PlantType> plantsAffectedBy(String parasite) {
+        if (parasite == null) {
+            return List.of();
+        }
+        String p = parasite.trim().toLowerCase();
+        if (p.isEmpty() || p.equals("insects")) {
+            return Arrays.asList(PlantType.values());
+        }
+        List<PlantType> result = new ArrayList<>();
+        for (PlantType type : PlantType.values()) {
+            if (type.getParasites().stream().anyMatch(x -> x.equalsIgnoreCase(p))) {
+                result.add(type);
+            }
+        }
+        return result;
+    }
+
+    /** Human-readable "which plants does this hit" string for the field tooltip. */
+    private String affectedPlantsText(String parasite) {
+        List<PlantType> affected = plantsAffectedBy(parasite);
+        if (affected.isEmpty()) {
+            return "No known host plants for \"" + parasite + "\".";
+        }
+        String names = affected.stream()
+                .map(PlantType::getDisplayName)
+                .collect(Collectors.joining(", "));
+        if (parasite != null && parasite.trim().equalsIgnoreCase("insects")) {
+            return "insects → affects every variety: " + names;
+        }
+        return parasite + " → affects: " + names;
     }
 
     private TableCell<GardenSnapshot.PlantView, Number> progressCell(int maxValue) {

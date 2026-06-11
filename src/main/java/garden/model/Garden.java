@@ -23,7 +23,37 @@ public class Garden {
     }
 
     public void addPlant(Plant plant) {
+        if (plant.getBoardSlot() < 0) {
+            plant.setBoardSlot(lowestFreeSlot());
+        }
         plants.add(plant);
+    }
+
+    /**
+     * Lowest board-slot index not currently occupied by a living-or-dead plant.
+     * Keeps the plants list itself gapless (so modules never see holes) while
+     * giving new plants the earliest freed position on the board.
+     */
+    private int lowestFreeSlot() {
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        for (Plant existing : plants) {
+            used.add(existing.getBoardSlot());
+        }
+        int slot = 0;
+        while (used.contains(slot)) {
+            slot++;
+        }
+        return slot;
+    }
+
+    /** Removes the given plant instance. Returns true if it was present. */
+    public boolean removePlant(Plant plant) {
+        return plants.remove(plant);
+    }
+
+    /** Removes the (unique-named) plant matching the given name, if any. */
+    public boolean removePlantByName(String name) {
+        return plants.removeIf(plant -> plant.getName().equals(name));
     }
 
     public List<Plant> getPlants() {

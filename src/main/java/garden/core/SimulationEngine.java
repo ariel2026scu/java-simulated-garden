@@ -127,7 +127,8 @@ public class SimulationEngine {
                         plant.getWaterLevel(),
                         plant.getStatus().name(),
                         plant.getActiveParasites().isEmpty() ? "-" : String.join("|", plant.getActiveParasites()),
-                        plant.getDeathReason().isBlank() ? "-" : plant.getDeathReason()))
+                        plant.getDeathReason().isBlank() ? "-" : plant.getDeathReason(),
+                        plant.getBoardSlot()))
                 .collect(Collectors.toList());
         return new GardenSnapshot(
                 context.getDay(),
@@ -183,6 +184,45 @@ public class SimulationEngine {
         garden.addPlant(plant);
         context.log("MANUAL", type.getDisplayName(), "SimulationEngine", "PLANT_ADDED", garden,
                 "Manually added " + plant.getName() + " to the garden via UI.");
+    }
+
+    /**
+     * Removes the named plant from the running garden (GUI action). Returns
+     * true if a plant matched and was removed.
+     */
+    public synchronized boolean removePlant(String name) {
+        ensureInitialized();
+        Plant target = null;
+        for (Plant plant : garden.getPlants()) {
+            if (plant.getName().equals(name)) {
+                target = plant;
+                break;
+            }
+        }
+        if (target == null) {
+            return false;
+        }
+        garden.removePlant(target);
+        context.log("MANUAL", target.getType().getDisplayName(), "SimulationEngine", "PLANT_REMOVED", garden,
+                "Manually removed " + name + " from the garden via UI.");
+        return true;
+    }
+
+    /**
+     * Removes every dead plant from the garden in one action (GUI convenience).
+     * Returns how many were cleared.
+     */
+    public synchronized int removeDeadPlants() {
+        ensureInitialized();
+        List<Plant> dead = new ArrayList<>(garden.getDeadPlants());
+        for (Plant plant : dead) {
+            garden.removePlant(plant);
+        }
+        if (!dead.isEmpty()) {
+            context.log("MANUAL", "-", "SimulationEngine", "DEAD_PLANTS_CLEARED", garden,
+                    "Cleared " + dead.size() + " dead plant(s) from the garden via UI.");
+        }
+        return dead.size();
     }
 
     public synchronized Map<String, Object> getPlantDefinitions() {

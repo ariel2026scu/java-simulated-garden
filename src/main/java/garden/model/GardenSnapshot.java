@@ -32,7 +32,8 @@ public record GardenSnapshot(
             int waterLevel,
             String status,
             String activeParasites,
-            String deathReason
+            String deathReason,
+            int slotIndex
     ) {
     }
 }

@@ -25,6 +25,13 @@ public class Plant {
     /** Maps parasite name → number of daily-update cycles it has been active. */
     private final Map<String, Integer> parasiteAge = new LinkedHashMap<>();
     private String deathReason;
+    /**
+     * Stable position on the Garden Defense Board, assigned by {@link Garden}
+     * when the plant is added. Removing a plant frees its slot; a later add
+     * reuses the lowest free slot, so deletions leave a visible gap rather than
+     * shuffling every later plant forward. -1 until assigned.
+     */
+    private int boardSlot = -1;
 
     public Plant(PlantType type) {
         this.id = IDS.getAndIncrement();
@@ -37,6 +44,8 @@ public class Plant {
 
     public int getId() { return id; }
     public PlantType getType() { return type; }
+    public int getBoardSlot() { return boardSlot; }
+    public void setBoardSlot(int boardSlot) { this.boardSlot = boardSlot; }
     public String getName() { return type.getDisplayName() + "-" + id; }
     public int getHealth() { return health; }
     public int getWaterLevel() { return waterLevel; }
