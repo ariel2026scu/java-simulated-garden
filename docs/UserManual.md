@@ -1,22 +1,23 @@
 # User Manual
 
-The project ships with **two interchangeable JavaFX front-ends** over the same
-simulation backend. Both write to the same `log.txt`.
+The app is a single JavaFX window (`garden.app.GardenShell`) with **two tabs**
+over one shared simulation backend. Both tabs observe the same engine — a change
+in one is reflected in the other — and everything writes to the same `log.txt`.
 
-| Front-end | Class | Best for |
-|-----------|-------|----------|
-| Living Garden (animated) | `garden.app.GardenGame` | Demos / presentation — autonomous animated garden |
-| Operator Dashboard (data) | `garden.app.GardenApp` | Inspecting plant tables, status counts, and the live log |
+| Tab | View class | Best for |
+|-----|-----------|----------|
+| Living Garden (animated) | `garden.app.GameView` | Demos / presentation — autonomous animated garden |
+| Admin Dashboard (data) | `garden.app.DashboardView` | Inspecting plant tables, status counts, and the live log |
 
-The Maven launcher (`mvn javafx:run`) starts whichever class is set as
-`<mainClass>` in `pom.xml`. To switch, edit that one line and re-run.
+The Maven launcher (`mvn javafx:run`) starts `GardenShell` (the `<mainClass>` in
+`pom.xml`); just switch tabs inside the window — no config edit needed.
 
 > Always launch with `mvn javafx:run` (not a plain "Run" of the class), otherwise
 > the JDK reports "JavaFX runtime components are missing".
 
 ---
 
-## A. Living Garden (`GardenGame`)
+## A. Living Garden tab (`GameView`)
 
 ### Startup: choose your plants
 On launch a setup screen appears. Each of the eight varieties has a count
@@ -61,7 +62,7 @@ These inject **disturbances** (challenges, not life support):
 
 ---
 
-## B. Operator Dashboard (`GardenApp`)
+## B. Admin Dashboard tab (`DashboardView`)
 
 - The top summary shows the simulated day, alive/dead plants, soil nutrients,
   and ambient temperature.
@@ -117,6 +118,6 @@ TIMESTAMP,DAY,EVENT,EVENT_VALUE,MODULE,ACTION,PLANTS_ALIVE,PLANTS_DEAD,DETAILS
 
 The graded long-run uses the monitoring **API** (`GardenSimulationAPI`), which
 initializes from `garden_config.json` and keeps the minimum-variety / minimum-10
-survival guarantees. For that test, run via the API or the `GardenApp`
-dashboard. Use `GardenGame` for live demos — at high speed it advances many
-simulated days quickly, which also grows `log.txt` quickly.
+survival guarantees. For that test, run via the API or the **Admin Dashboard**
+tab. Use the **Living Garden** tab for live demos — at high speed it advances
+many simulated days quickly, which also grows `log.txt` quickly.

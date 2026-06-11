@@ -13,7 +13,7 @@ headlessly through `GardenSimulationAPI` without launching JavaFX. Java 17, Mave
 Maven uses JavaFX 21, which requires JDK 17+. Set `JAVA_HOME` if the default JDK is older:
 
 ```bash
-# Run the game-style garden board (configured mainClass in pom.xml)
+# Run the JavaFX app (GardenShell, the configured mainClass in pom.xml)
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn javafx:run
 
 # Compile everything
@@ -70,7 +70,9 @@ and adding it to that list.
 
 ### Events (`garden.event`)
 `GardenEvent` (name + value) with implementations `RainEvent`, `TemperatureEvent`,
-`ParasiteEvent`, `ManualEvent`. Modules switch on the event's `name()`.
+`ParasiteEvent`, `ManualEvent`. Modules dispatch on `instanceof`, **not** on `name()`.
+`TemperatureEvent.name()` classifies by value purely for log readability — `HEAT_WAVE`
+above 95°F, `COLD_SNAP` below 55°F, otherwise `TEMPERATURE` — so the EVENT column is grep-able.
 
 ### Model (`garden.model`)
 `PlantType` is an enum holding all per-variety tuning (water requirement, min/max temperature,
@@ -79,12 +81,19 @@ mutable per-instance state (health, water, status, active parasites, death reaso
 is the plant collection. `GardenSnapshot` is an immutable view the JavaFX UI renders from
 (the UI never touches model objects directly).
 
-### Two JavaFX apps (`garden.app`)
-- `GardenGame` — animated game-style board; this is the `mainClass` Maven runs.
-- `GardenApp` — table/control dashboard variant.
+### JavaFX UI (`garden.app`)
+`GardenShell` is the single `Application` entry point (the `mainClass` Maven runs). It owns
+one shared `SimulationEngine` and hosts two tabs that both observe it, cross-refreshing each
+other on any change:
+- `GameView` — "Living Garden", an animated autonomous board that advances days on a timer
+  and renders cartoon plants, sprinklers, drones, etc.
+- `DashboardView` — "Admin Dashboard", control-and-tables view for precise event values,
+  adding plants, and reading `log.txt` live.
 
-Both drive the same `SimulationEngine` and only read `GardenSnapshot`. Styling is in
-`src/main/resources/garden/app/garden.css`.
+The views only read `GardenSnapshot` — never the model objects. `GardenShell` also loads the
+window icons and macOS Dock icon from `/icons/icon_<size>.png` (tolerant of any subset of
+sizes; Dock uses `java.awt.Taskbar`). Styling is in `src/main/resources/garden/app/garden.css`;
+icon art lives under `src/main/resources/icons/` (PNG tiers plus `.icns`/`.ico` bundles).
 
 ### Logging (`garden.logging`)
 `GardenLogger` writes a CSV `log.txt` with header
