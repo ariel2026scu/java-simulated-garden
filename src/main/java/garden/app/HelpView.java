@@ -3,15 +3,21 @@ package garden.app;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 import java.io.File;
+import java.nio.file.Files;
 
 /**
  * "Help" tab — a self-contained, scrollable usage guide shown alongside
@@ -162,11 +168,11 @@ public class HelpView {
         return row;
     }
 
-    /** Buttons that open the bundled Markdown docs in the OS default app. */
+    /** Buttons that show the bundled Markdown docs in an in-app viewer. */
     private Node docButtons() {
-        Button readme = docButton("Open README.md", "README.md");
-        Button manual = docButton("Open User Manual", "docs/UserManual.md");
-        Button design = docButton("Open Design Notes", "docs/Design.md");
+        Button readme = docButton("README", "README.md");
+        Button manual = docButton("User Manual", "docs/UserManual.md");
+        Button design = docButton("Design Notes", "docs/Design.md");
         HBox box = new HBox(12, readme, manual, design);
         box.setAlignment(Pos.CENTER_LEFT);
         box.setPadding(new Insets(4, 0, 0, 8));
@@ -176,7 +182,7 @@ public class HelpView {
     private Button docButton(String label, String relativePath) {
         Button btn = new Button(label);
         btn.setStyle("-fx-background-color: #2e7d49; -fx-text-fill: white; -fx-font-weight: bold;");
-        btn.setOnAction(e -> openDoc(relativePath));
+        btn.setOnAction(e -> showDoc(label, relativePath));
         File f = new File(relativePath);
         if (!f.exists()) {
             btn.setDisable(true);
@@ -186,21 +192,39 @@ public class HelpView {
     }
 
     /**
-     * Opens the given project-relative doc with the OS default handler. Degrades
-     * silently if AWT Desktop is unavailable or the file is gone — the tab's
-     * own text is the primary content, the docs are a bonus.
+     * Reads the given project-relative doc and shows its text in a modal
+     * in-app viewer window. Rendering in-app (rather than handing the file to
+     * the OS default Markdown app, which on some systems just launches the
+     * editor without loading the file) guarantees the user actually sees the
+     * content. Degrades to an error message in the same window if the file
+     * cannot be read.
      */
-    private void openDoc(String relativePath) {
+    private void showDoc(String label, String relativePath) {
+        String text;
         try {
-            File f = new File(relativePath).getAbsoluteFile();
-            if (f.exists() && java.awt.Desktop.isDesktopSupported()
-                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
-                java.awt.Desktop.getDesktop().open(f);
-            } else {
-                System.err.println("[HelpView] cannot open doc: " + relativePath);
-            }
+            text = Files.readString(new File(relativePath).toPath());
         } catch (Exception ex) {
-            System.err.println("[HelpView] could not open " + relativePath + ": " + ex);
+            text = "Could not read " + relativePath + ":\n" + ex;
         }
+
+        TextArea area = new TextArea(text);
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setStyle("-fx-font-family: 'monospace'; -fx-font-size: 13px;");
+
+        Button close = new Button("Close");
+        Stage viewer = new Stage();
+        close.setOnAction(e -> viewer.close());
+        HBox footer = new HBox(close);
+        footer.setAlignment(Pos.CENTER_RIGHT);
+        footer.setPadding(new Insets(8, 12, 12, 12));
+
+        VBox box = new VBox(area, footer);
+        VBox.setVgrow(area, Priority.ALWAYS);
+
+        viewer.initModality(Modality.NONE);
+        viewer.setTitle(label + " — " + relativePath);
+        viewer.setScene(new Scene(box, 820, 640));
+        viewer.show();
     }
 }
