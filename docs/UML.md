@@ -24,12 +24,18 @@ classDiagram
         -SimulationContext context
         -Path configPath
         +initialize()
+        +initializeWith(Map~PlantType,Integer~)
         +submitEvent(GardenEvent)
         +advanceOneDay()
+        +tickAutonomous()
         +snapshot() GardenSnapshot
         +logCurrentState()
         +addPlant(PlantType)
+        +removePlant(String) bool
+        +removeDeadPlants() int
         +getPlantDefinitions() Map
+        +getRecentLogEntries() List
+        +getRecentUserLogEntries() List
         +getLogPath() Path
     }
 
@@ -46,13 +52,19 @@ classDiagram
         -List~Plant~ plants
         -int soilNutrients
         -int ambientTemperature
+        -int lastObservedTemperature
+        -int lastEventRawTemperature
         +addPlant(Plant)
+        +removePlant(Plant) bool
+        +removePlantByName(String) bool
         +getPlants() List
         +getAlivePlants() List
         +getDeadPlants() List
         +countAliveByType() Map
         +changeSoilNutrients(int)
         +setAmbientTemperature(int)
+        +getLastObservedTemperature() int
+        +getLastEventRawTemperature() int
     }
 
     class Plant {
@@ -63,6 +75,9 @@ classDiagram
         -PlantStatus status
         -Map~String,Integer~ parasiteAge
         -String deathReason
+        -int boardSlot
+        +getBoardSlot() int
+        +setBoardSlot(int)
         +infest(String) bool
         +ageParasitesAndGetTreatmentReady() List
         +treatParasite(String) bool
@@ -141,6 +156,8 @@ classDiagram
         -Path logPath
         +reset()
         +log(int, String, String, String, String, Garden, String)
+        +recentEntries() List~LogEntry~
+        +recentUserEntries() List~LogEntry~
         +getLogPath() Path
     }
 
@@ -154,7 +171,19 @@ classDiagram
         +deadPlants int
         +soilNutrients int
         +ambientTemperature int
+        +outsideTemperature int
         +plants List~PlantView~
+    }
+
+    class PlantView {
+        +name String
+        +type String
+        +health int
+        +waterLevel int
+        +status String
+        +activeParasites String
+        +deathReason String
+        +slotIndex int
     }
 
     GardenSimulationAPI --> SimulationEngine
@@ -177,6 +206,7 @@ classDiagram
     GardenEvent <|.. ParasiteEvent
     GardenEvent <|.. ManualEvent
     SimulationEngine ..> GardenSnapshot : creates
+    GardenSnapshot --> "0..*" PlantView
 ```
 
 ---
@@ -234,6 +264,9 @@ flowchart LR
         UC7["Advance Day"]
         UC8["View Live Dashboard"]
         UC9["Reset Garden"]
+        UC10["Remove Plant(s)"]
+        UC11["Remove All Dead"]
+        UC12["Open Log File"]
     end
 
     GS --> UC1
@@ -251,6 +284,9 @@ flowchart LR
     HG --> UC7
     HG --> UC8
     HG --> UC9
+    HG --> UC10
+    HG --> UC11
+    HG --> UC12
 ```
 
 ---
@@ -309,4 +345,98 @@ sequenceDiagram
     loop each dead plant
         Engine->>Log: PLANT_DEAD (type, death_reason)
     end
+```
+
+---
+
+## 6. Activity Diagram — Daily Simulation Cycle
+
+The control flow of a single `submitEvent(...)` call — the heart of every simulated day,
+whether triggered by an API call, a manual "Advance Day" click, or the autonomous timer.
+
+```mermaid
+flowchart TD
+    A([Event submitted]) --> B{Garden initialized?}
+    B -- No --> B1[initialize from garden_config.json]
+    B -- Yes --> C
+    B1 --> C[advanceDay: day counter += 1]
+    C --> D[Log EVENT_RECEIVED]
+    D --> E[Each alive plant consumes daily water]
+    E --> F[Log DAILY_WATER_USE]
+
+    F --> G[/For each module: handleEvent/]
+    G --> H{Module threw?}
+    H -- Yes --> H1[Log MODULE_ERROR, continue]
+    H -- No --> I[Module updated plant / env state]
+    H1 --> J
+    I --> J{More modules?}
+    J -- Yes --> G
+    J -- No --> K[/For each module: dailyUpdate/]
+
+    K --> L[Aging, treatment, irrigation, fertilizer]
+    L --> M[Each alive plant: evaluateWaterStress]
+    M --> N[Build living status mix + deaths-by-cause]
+    N --> O[Log DAY_COMPLETED summary]
+    O --> P([Day ends; temperature resets to 72°F])
+```
+
+---
+
+## 7. Object Diagram — Runtime Snapshot
+
+A concrete instant on day 4: one healthy Cactus, one infested Rose mid-treatment, and one
+dead Lettuce whose board slot has been freed. Illustrates the live object graph the engine
+holds and the immutable `GardenSnapshot` the UI renders from.
+
+```mermaid
+flowchart TB
+    engine["engine : SimulationEngine<br/>day = 4"]
+    garden["garden : Garden<br/>soilNutrients = 71<br/>ambientTemperature = 72<br/>lastObservedTemperature = 100"]
+    p1["cactus3 : Plant<br/>type = CACTUS<br/>health = 100<br/>status = HEALTHY<br/>boardSlot = 0"]
+    p2["rose1 : Plant<br/>type = ROSE<br/>health = 64<br/>status = INFESTED<br/>parasiteAge = {aphid:1}<br/>boardSlot = 1"]
+    p3["lettuce2 : Plant<br/>type = LETTUCE<br/>health = 0<br/>status = DEAD<br/>deathReason = 'heat stress'<br/>boardSlot = 2"]
+    water["watering : WateringSystem"]
+    temp["climate : TemperatureControlSystem"]
+    pest["pest : PestControlSystem"]
+    fert["fertilizer : FertilizerSystem"]
+    snap["snapshot : GardenSnapshot<br/>day = 4, alive = 2, dead = 1"]
+
+    engine --> garden
+    engine --> water
+    engine --> temp
+    engine --> pest
+    engine --> fert
+    engine -. creates .-> snap
+    garden --> p1
+    garden --> p2
+    garden --> p3
+```
+
+---
+
+## 8. Communication Diagram — Event Processing
+
+The same interaction as the event-processing sequence diagram, drawn as a communication
+(collaboration) diagram to emphasize object links and the numbered message order.
+
+```mermaid
+flowchart LR
+    Script(["Grading Script / UI"])
+    API["api : GardenSimulationAPI"]
+    Engine["engine : SimulationEngine"]
+    Ctx["ctx : SimulationContext"]
+    Modules["module : GardenModule"]
+    Garden["garden : Garden"]
+    Log["logger : GardenLogger"]
+
+    Script -->|"1: rain / temperature / parasite"| API
+    API -->|"2: submitEvent(event)"| Engine
+    Engine -->|"3: advanceDay()"| Ctx
+    Engine -->|"4: consumeDailyWater()"| Garden
+    Engine -->|"5: handleEvent(garden, event, ctx)"| Modules
+    Modules -->|"6: update state"| Garden
+    Engine -->|"7: dailyUpdate(garden, ctx)"| Modules
+    Engine -->|"8: evaluateWaterStress()"| Garden
+    Ctx -->|"9: log(...)"| Log
+    Modules -->|"10: log(...)"| Log
 ```

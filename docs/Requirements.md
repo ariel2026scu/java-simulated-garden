@@ -27,7 +27,14 @@ simulated 24-day period.
   RECOVERING → DEAD — based on environmental conditions.
 - **Config-file seeding**: Garden initialized from a JSON config file
   (`garden_config.json`), ensuring at least 10 plants and all varieties are alive at start.
+  The GUI startup picker can also seed a custom variety→count garden (`initializeWith`).
 - **Manual plant addition**: Human gardeners can add individual plants via the GUI.
+- **Manual plant removal**: Human gardeners can remove a single selected plant, several at
+  once (Ctrl/Shift multi-select on the table or the board), remove a plant straight from a
+  board tile via its right-click context menu, or clear **all dead plants** in one click.
+- **Garden Defense Board**: Plants hold a stable board slot. Removing a plant frees its slot
+  and leaves a visible gap instead of shuffling later plants forward; a later add reuses the
+  lowest free slot.
 
 ### Autonomous Modules (≥ 3 required)
 | Module | Responsibility |
@@ -52,9 +59,18 @@ simulated 24-day period.
 - `getState()` emits one row per alive plant and one per dead plant for easy grader review.
 
 ### User Interface (JavaFX)
-- Live plant table with colour-coded rows by health status
-- Summary bar: day, alive/dead counts, soil nutrients, temperature, log path
-- Controls: Rain, Temperature, Trigger Parasite, Advance Day, Log State, Reset, Add Plant
+Single `GardenShell` window with two tabs over one shared engine:
+- **Living Garden** (`GameView`) — animated autonomous board that advances days on a timer
+  (1x/5x/20x speed), draws cartoon plants, sprinklers, drones, shade/heat panels, and a
+  startup plant picker.
+- **Admin Dashboard** (`DashboardView`) — data view with:
+  - Live plant table, colour-coded rows by health status, multi-select enabled
+  - Garden Defense Board of slot tiles (click to select, right-click to remove)
+  - Summary bar: day, alive/dead counts, soil nutrients, inside/outside temperature, log path
+  - Controls: Rain (up to 200mm), Set Temperature, Parasite, Advance Day, Log State,
+    Reset Garden, Add Plant, **Remove Selected**, **Remove All Dead** (disabled when nothing
+    is dead), and **Open Log File**
+  - Live `log.txt` viewer
 
 ---
 
@@ -94,11 +110,13 @@ simulated 24-day period.
 **so that** heat-sensitive plants take stress damage and the climate module mitigates extreme values.
 
 **Main Scenario:**
-1. TemperatureControlSystem receives TemperatureEvent(111).
-2. System applies a partial mitigation (reduces by 10°F for values > 95°F).
+1. TemperatureControlSystem receives TemperatureEvent(111) (clamped to the 40–120°F range).
+2. System applies a partial mitigation — reduces by 10°F when > 95°F, or warms by 12°F when
+   < 50°F — and records both the raw "outside" and conditioned "inside" reading for the UI.
 3. End of day: each plant's `evaluateTemperature` checks against its min/max range.
 4. Heat-tolerant plants (Cactus, Lavender) survive; heat-sensitive (Lettuce, Rose) take damage.
-5. Temperature resets to default (72°F) after the day ends.
+5. Temperature resets to default (72°F) after the day ends; the last observed reading persists
+   so the UI does not snap back to 72°F a moment after each event.
 
 ---
 
@@ -142,7 +160,37 @@ simulated 24-day period.
 
 ---
 
-### UC-7: Garden Survives 24-Hour Automated Test
+### UC-8: Human Gardener Removes Plants
+**As a** human gardener using the GUI,  
+**I want to** select one or more plants and click "Remove Selected" (or right-click a board
+tile and choose "Remove"),  
+**so that** unwanted or crowded plants leave the garden.
+
+**Main Scenario:**
+1. Gardener Ctrl/Shift-clicks rows in the plant table or tiles on the Garden Defense Board.
+2. Clicks "Remove Selected" (or uses a tile's right-click "Remove" item).
+3. Engine removes each plant, frees its board slot (leaving a gap), and logs PLANT_REMOVED.
+4. Table and board refresh.
+
+**Alternative:** Nothing selected → "Remove Selected" is disabled.
+
+---
+
+### UC-9: Clear All Dead Plants
+**As a** human gardener using the GUI,  
+**I want to** click "Remove All Dead",  
+**so that** every dead plant is cleared from the board in one action.
+
+**Main Scenario:**
+1. Gardener clicks "Remove All Dead".
+2. Engine removes every dead plant and logs DEAD_PLANTS_CLEARED with the count.
+3. Board and table refresh.
+
+**Alternative:** No dead plants → the button is disabled.
+
+---
+
+### UC-10: Garden Survives 24-Hour Automated Test
 **As a** grader running the monitoring script,  
 **I want** the garden to run for 24 simulated days without crashing and with plants alive at the end,  
 **so that** the autonomous systems can be validated.

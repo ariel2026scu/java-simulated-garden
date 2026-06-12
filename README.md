@@ -7,12 +7,15 @@ project can also be tested through `GardenSimulationAPI` without launching JavaF
 ## Main Features
 
 - Single JavaFX window (`GardenShell`) with two tabs over one shared engine:
-  an animated **Living Garden** board and an **Admin Dashboard** with plant
-  table, event controls, and a live log viewer.
+  an animated **Living Garden** board and an **Admin Dashboard** with a plant
+  table, a **Garden Defense Board**, event controls, and a live log viewer.
 - Standalone `GardenSimulationAPI` for instructor automation scripts.
 - Modular backend with watering, temperature control, pest control, and fertilizer systems.
-- Config-driven garden setup from `garden_config.json`.
-- Detailed CSV-style `log.txt` with day, event, module action, alive plants, dead plants, sensor readings, and details.
+- Config-driven garden setup from `garden_config.json`, or a custom startup plant picker.
+- Add and remove plants from the GUI — single, multi-select (Ctrl/Shift-click),
+  right-click a board tile, or **Remove All Dead** in one click. Plants keep
+  stable board slots, so deletions leave a visible gap.
+- Detailed CSV-style `log.txt` with day, event, module action, alive plants, dead plants, sensor readings, and details, plus an **Open Log File** button.
 - Multiple plant varieties with different water, temperature, parasite, and recovery needs.
 
 ## API

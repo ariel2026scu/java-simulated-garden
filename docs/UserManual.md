@@ -65,14 +65,31 @@ These inject **disturbances** (challenges, not life support):
 ## B. Admin Dashboard tab (`DashboardView`)
 
 - The top summary shows the simulated day, alive/dead plants, soil nutrients,
-  and ambient temperature.
-- The center board is a lane-based lawn; each tile shows a plant marker, health
-  bar, name, and condition.
+  and the inside/outside ambient temperature.
+- The center **Garden Defense Board** lays plants out by their stable board slot;
+  each tile shows a plant marker, health bar, name, and condition. Removing a
+  plant leaves its slot empty (a visible gap) instead of shifting the others.
 - The right panel shows status totals, a detailed plant table, and the log path.
-- The lower panel mirrors `log.txt`.
+- The lower panel mirrors `log.txt`; the **Open Log File** button opens the raw
+  `log.txt` in your system editor.
 
-Controls: `Advance Day`, `Rain`, `Set Temperature`, `Parasite`, `Log State`,
-`Reset Garden`, and `Add Plant` (with a variety picker).
+### Controls
+
+`Advance Day`, `Rain` (up to 200mm — a heavy pour can overwater), `Set Temperature`,
+`Parasite`, `Log State`, `Reset Garden`, and `Add Plant` (with a variety picker).
+
+### Selecting and removing plants
+
+- **Select** plants by clicking a board tile or a Plant Details row.
+  Ctrl/Shift-click to select several at once (table and board stay in sync).
+- **Remove Selected** removes every selected plant (disabled when nothing is
+  selected).
+- **Remove All Dead** clears every dead plant in one click (disabled when no
+  plants are dead).
+- You can also **right-click a board tile** and choose "Remove" to delete that
+  one plant directly.
+
+Every removal is recorded in `log.txt` (`PLANT_REMOVED` / `DEAD_PLANTS_CLEARED`).
 
 ---
 
